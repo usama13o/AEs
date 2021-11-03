@@ -20,8 +20,7 @@ class glas_dataset(data.Dataset):
         img_dir= root_dir
         # targets are a comob of two dirs 1- normal 1024 patches 2- Tum 1024
         self.image_filenames  = sorted([join(img_dir, x) for x in listdir(img_dir) if is_image_file(x) if "_anno" not in x])
-        self.target_filenames = sorted([x.split(".bmp")[0]+"_anno.bmp" for x in self.image_filenames])
-        sp= self.target_filenames.__len__()
+        sp= self.image_filenames.__len__()
         sp= int(train_pct *sp)
         random.shuffle(self.image_filenames)
         if split == 'train':
@@ -29,8 +28,6 @@ class glas_dataset(data.Dataset):
         else:
             self.image_filenames = self.image_filenames[sp:]
             # find the mask for the image
-        self.target_filenames = [ self.find_in_y((x)) for x in self.image_filenames]
-        assert len(self.image_filenames) == len(self.target_filenames)
 
         # report the number of images in the dataset
         print('Number of {0} images: {1} patches'.format(split, self.__len__()))
@@ -43,7 +40,6 @@ class glas_dataset(data.Dataset):
         if self.preload_data:
             print('Preloading the {0} dataset ...'.format(split))
             self.raw_images = [open_image_np(ii)[0] for ii in self.image_filenames]
-            self.raw_labels = [open_target_np_glas(ii)[0] for ii in self.target_filenames]
             print('Loading is done\n')
 
 
@@ -54,10 +50,8 @@ class glas_dataset(data.Dataset):
         # load the nifti images
         if not self.preload_data:
             input  = open_image_np(self.image_filenames[index])
-            target  = open_target_np_glas(self.target_filenames[index])
         else:
             input = np.copy(self.raw_images[index])
-            target = np.copy(self.raw_labels[index])
 
         # handle exceptions
         # check_exceptions(input, target)

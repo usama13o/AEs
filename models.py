@@ -40,7 +40,7 @@ class Encoder(nn.Module):
             nn.Conv2d(2*c_hid, 2*c_hid, kernel_size=3,padding=1, stride=2),  # 8x8 => 4x4
             act_fn(),
             nn.Flatten(),  # Image grid to single feature vector
-            nn.Linear(2*14*14*c_hid, latent_dim)
+            nn.Linear(2*8*8*c_hid, latent_dim)
         )
 
         # self.conv1 = nn.Conv2d(
@@ -53,7 +53,7 @@ class Encoder(nn.Module):
         # self.conv6 = nn.Conv2d(
         #     2*c_hid, 2*c_hid, kernel_size=3, padding=1, stride=2)  # 8x8 => 4x4
         # self.conv7 = nn.Flatten()  # Image grid to single feature vector
-        # self.lin = nn.Linear(2*14*14*c_hid, latent_dim)
+        # self.lin = nn.Linear(2*8*8*c_hid, latent_dim)
 
     def forward(self, x):
         # x = self.conv1(x)
@@ -93,7 +93,7 @@ class Decoder(nn.Module):
         super().__init__()
         c_hid = base_channel_size
         self.linear = nn.Sequential(
-            nn.Linear(latent_dim, 2*14*14*c_hid),
+            nn.Linear(latent_dim, 2*8*8*c_hid),
             act_fn()
         )
         self.net = nn.Sequential(
@@ -121,7 +121,7 @@ class Decoder(nn.Module):
 
     def forward(self, x):
         x = self.linear(x)
-        x = x.reshape(x.shape[0], -1, 14, 14)
+        x = x.reshape(x.shape[0], -1, 8, 8)
         x = self.net(x)
         return x
 
@@ -134,8 +134,8 @@ class Autoencoder(pl.LightningModule):
                  encoder_class: object = Encoder,
                  decoder_class: object = Decoder,
                  num_input_channels: int = 3,
-                 width: int = 224,
-                 height: int = 224):
+                 width: int =128,
+                 height: int = 128):
         super().__init__()
         # Saving hyperparameters of autoencoder
         self.save_hyperparameters()

@@ -47,7 +47,7 @@ except ModuleNotFoundError:  # Google Colab does not have PyTorch Lightning inst
 # Tensorboard extension (for visualization purposes later)
 
 # Path to the folder where the datasets are/should be downloaded (e.g. CIFAR10)
-DATASET_PATH = "/mnt/data/Other/DOWNLOADS/WSIData/GLAS/Warwick QU Dataset (Released 2016_07_08)/"
+DATASET_PATH = "/mnt/data/Other/DOWNLOADS/WSIData/filtered/PNG/train"
 # Path to the folder where the pretrained models are saved
 CHECKPOINT_PATH = "./saved_models/"
 
@@ -66,7 +66,7 @@ print("Device:", device)
 # Get data
 # Transformations applied on each image => only make them a tensor
 transform = transforms.Compose([
-                                Resize((224,224)),
+                                Resize((128,128)),
                                 transforms.ToTensor(),
                                 ts.ChannelsFirst(),
                                 ts.TypeCast(['float', 'float']),
@@ -222,6 +222,6 @@ writer = SummaryWriter("tensorboard/")
 # Note: the embedding projector in tensorboard is computationally heavy.
 # Reduce the image amount below if your computer struggles with visualizing all 10k points
 NUM_IMGS = len(train_dataset) 
-
+import time
 writer.add_embedding(test_img_embeds[1][:NUM_IMGS], # Encodings per image
-                     label_img=(test_img_embeds[0][:NUM_IMGS]+1)/2.0) # Adding the original images to the plot
+                     label_img=(test_img_embeds[0][:NUM_IMGS]+1)/2.0,tags=(str(time.clock_gettime))) # Adding the original images to the plot
