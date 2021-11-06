@@ -110,6 +110,7 @@ def embed_imgs(model, data_loader):
     for imgs in tqdm(data_loader, desc="Encoding images", leave=False):
         max+=1
         with torch.no_grad():
+                # print("Encoding image")
                 z = model.encoder(imgs.to(model.device))
         img_list.append(imgs)
         
@@ -146,6 +147,9 @@ writer = SummaryWriter("tensorboard/")
 # Note: the embedding projector in tensorboard is computationally heavy.
 # Reduce the image amount below if your computer struggles with visualizing all 10k points
 NUM_IMGS = len(train_dataset) 
+print(NUM_IMGS)
 
-writer.add_embedding(test_img_embeds[1][:NUM_IMGS], # Encodings per image
-                     label_img=(test_img_embeds[0][:NUM_IMGS]+1)/2.0) # Adding the original images to the plot
+writer.add_embedding(train_img_embeds[1][:NUM_IMGS], # Encodings per image
+                     metadata=['test_set[i][1a]' for i in range(NUM_IMGS)], # Adding the labels per image to the plot
+
+                     label_img=(train_img_embeds[0][:NUM_IMGS]+1)/2.0) # Adding the original images to the plot
