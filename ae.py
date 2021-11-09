@@ -25,7 +25,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from IPython.display import set_matplotlib_formats
 
-from data_load import glas_dataset,test_peso
+from data_load import glas_dataset, test_peso
 from helpers import GenerateCallback
 from models import Autoencoder
 from utils import Resize
@@ -48,6 +48,7 @@ except ModuleNotFoundError:  # Google Colab does not have PyTorch Lightning inst
 
 # Path to the folder where the datasets are/should be downloaded (e.g. CIFAR10)
 DATASET_PATH = "F:\\Data\\test\\train\\cls2\\"
+DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
 # Path to the folder where the pretrained models are saved
 CHECKPOINT_PATH = "./saved_models/"
 
@@ -66,23 +67,28 @@ print("Device:", device)
 # Get data
 # Transformations applied on each image => only make them a tensor
 transform = transforms.Compose([
-                                Resize((128,128)),
-                                transforms.ToTensor(),
-                                transforms.RandomHorizontalFlip(),
-                                ts.ChannelsFirst(),
-                                ts.TypeCast(['float', 'float']),
-                                ts.ChannelsLast(),
-                                # ts.AddChannel(axis=0),
-                                ts.TypeCast(['float', 'long']),
-                                ])
+    Resize((128, 128)),
+    transforms.ToTensor(),
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomVerticalFlip(),
+    transforms.RandomRotation(15),
+    transforms.RandomApply(torch.nn.ModuleList([
+        transforms.GaussianBlur((3, 3)),
+    ]), p=0.3),
+    ts.ChannelsFirst(),
+    ts.TypeCast(['float', 'float']),
+    ts.ChannelsLast(),
+    # ts.AddChannel(axis=0),
+    ts.TypeCast(['float', 'long']),
+])
 
 # Loading the training dataset. We need to split it into a training and validation part
 pl.seed_everything(42)
 
 # Loading the test set
-train_dataset =test_peso(
+train_dataset = glas_dataset(
     root_dir=DATASET_PATH, split='train', transform=transform)
-valid_dataset =test_peso(
+valid_dataset =glas_dataset(
     root_dir=DATASET_PATH, split='valid', transform=transform)
 
 # We define a set of data loaders that we can use for various purposes later.
@@ -162,12 +168,13 @@ def train_cifar(latent_dim):
 
 
 model_dict = {}
-for latent_dim in [512,1024]:
+for latent_dim in [512, 1024]:
     model_ld, result_ld = train_cifar(latent_dim)
     model_dict[latent_dim] = {"model": model_ld, "result": result_ld}
 
 latent_dims = sorted([k for k in model_dict])
-val_scores = [model_dict[k]["result"]["val"][0]["test_loss"] for k in latent_dims]
+val_scores = [model_dict[k]["result"]["val"][0]["test_loss"]
+              for k in latent_dims]
 
 # fig = plt.figure(figsize=(6,4))
 # plt.plot(latent_dims, val_scores, '--', color="#000", marker="*", markeredgecolor="#000", markerfacecolor="y", markersize=16)

@@ -6,25 +6,48 @@ from os import listdir
 from os.path import join
 from os.path import basename
 from utils import load_nifti_img, check_exceptions, is_image_file, open_image_np,open_target_np, open_target_np_glas, open_target_np_peso;                   
+from glob import glob 
 import random
+from tqdm import tqdm 
 
 class glas_dataset(data.Dataset):
-    def find_in_y(self,x):
-        x = x.split(".")[0]
-        y_lis = self.target_filenames
-        match = [y for y in self.target_filenames if x ==y.split("_anno")[-2]]
-        return match[0]
+    def filter_size(self,test_size,filenames):
+        list_of_idxs = []
+        for idx,file in tqdm(enumerate(filenames)):
+            try:
+                temp_img = open_image_np(file).shape
+            except:
+                print(file)
+                list_of_idxs.append(idx)
+            if temp_img[0] == test_size[0] and temp_img[1] == test_size[1]:
+                continue 
+            else:
+                list_of_idxs.append(idx)
+        filenames = np.delete(filenames,list_of_idxs)
+                
+        return filenames
 
     def __init__(self, root_dir, split, transform=None, preload_data=False,train_pct=0.8,balance=True):
         super(glas_dataset, self).__init__()
         img_dir= root_dir
         # targets are a comob of two dirs 1- normal 1024 patches 2- Tum 1024
-        self.image_filenames  = sorted([join(img_dir, x) for x in listdir(img_dir) if is_image_file(x) if "_anno" not in x])
+        self.image_filenames  = sorted(glob(img_dir+'\*'))
+        #filter the iamges with a different size than the required one 
+        test_img = open_image_np(self.image_filenames[0])
+        test_size = test_img.shape
+        print("Checking if images match standard sizes: ",test_size," ",len(self.image_filenames))
+        # self.image_filenames = self.filter_size(test_size,self.image_filenames)
+        print("Changed to --> ",len(self.image_filenames))
+        del test_img
+        del test_size
+        
         sp= self.image_filenames.__len__()
         sp= int(train_pct *sp)
-        random.shuffle(self.image_filenames)
+        # random.shuffle(self.image_filenames)
         if split == 'train':
             self.image_filenames = self.image_filenames[:sp]
+        if split == 'all':
+            self.image_filenames= self.image_filenames
         else:
             self.image_filenames = self.image_filenames[sp:]
             # find the mask for the image
@@ -50,6 +73,8 @@ class glas_dataset(data.Dataset):
         # load the nifti images
         if not self.preload_data:
             input  = open_image_np(self.image_filenames[index])
+            if input.shape[2] > 3:
+                input = input[:,:,0:3]
         else:
             input = np.copy(self.raw_images[index])
 
@@ -62,6 +87,7 @@ class glas_dataset(data.Dataset):
 
     def __len__(self):
         return len(self.image_filenames)
+
 
 
 

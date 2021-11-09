@@ -19,6 +19,9 @@ import json
 import math
 from posixpath import split
 import numpy as np
+import tensorflow as tf
+import tensorboard as tb
+tf.io.gfile = tb.compat.tensorflow_stub.io.gfile
 
 # Imports for plotting
 import matplotlib.pyplot as plt
@@ -47,6 +50,8 @@ except ModuleNotFoundError:  # Google Colab does not have PyTorch Lightning inst
 
 # Path to the folder where the datasets are/should be downloaded (e.g. CIFAR10)
 DATASET_PATH = "F:\\Data\\test\\train\\cls2\\"
+DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
+DATASET_PATH = r"C:\Users\Usama\AEs\slices"
 # Path to the folder where the pretrained models are saved
 CHECKPOINT_PATH = "./saved_models/"
 
@@ -78,23 +83,23 @@ transform = transforms.Compose([
 pl.seed_everything(42)
 
 # Loading the test set
-train_dataset =test_peso(
-    root_dir=DATASET_PATH, split='train', transform=transform)
-valid_dataset =test_peso(
+train_dataset =glas_dataset(
+    root_dir=DATASET_PATH, split='all', transform=transform)
+valid_dataset =glas_dataset(
     root_dir=DATASET_PATH, split='valid', transform=transform)
 
 # We define a set of data loaders that we can use for various purposes later.
-train_loader = data.DataLoader(train_dataset, batch_size=64,
-                               shuffle=True, drop_last=True, pin_memory=False, num_workers=4)
+train_loader = data.DataLoader(train_dataset, batch_size=6,
+                               shuffle=False, drop_last=True, pin_memory=False, num_workers=4)
 val_loader = data.DataLoader(
-    valid_dataset, batch_size=64, shuffle=False, drop_last=False, num_workers=4)
+    valid_dataset, batch_size=6, shuffle=False, drop_last=False, num_workers=4)
 
 
 def get_train_images(num):
     return torch.stack([train_dataset[i] for i in range(num)], dim=0)
 
 # Check whether pretrained model exists. If yes, load it and skip training
-pretrained_filename = r"saved_models\glass_256\lightning_logs\version_0\checkpoints\epoch=77-step=7565.ckpt"
+pretrained_filename = r"C:\Users\Usama\saved_models\glass_1024\lightning_logs\version_0\checkpoints\epoch=499-step=13999.ckpt"
 model = Autoencoder.load_from_checkpoint(pretrained_filename)
 
 
@@ -138,18 +143,64 @@ def find_similar_images(query_img, query_z, key_embeds, K=8):
     plt.show()
 
 # Plot the closest images for the first N test images as example
-for i in range(8):
-    find_similar_images(test_img_embeds[0][i], test_img_embeds[1][i], key_embeds=train_img_embeds)
+# for i in range(8):
+    # find_similar_images(test_img_embeds[0][i], test_img_embeds[1][i], key_embeds=train_img_embeds)
 
 # Create a summary writer
-writer = SummaryWriter("tensorboard/")
+writer = SummaryWriter(CHECKPOINT_PATH)
 
 # Note: the embedding projector in tensorboard is computationally heavy.
 # Reduce the image amount below if your computer struggles with visualizing all 10k points
 NUM_IMGS = len(train_dataset) 
 print(NUM_IMGS)
 
-writer.add_embedding(train_img_embeds[1][:NUM_IMGS], # Encodings per image
-                     metadata=['test_set[i][1a]' for i in range(NUM_IMGS)], # Adding the labels per image to the plot
 
-                     label_img=(train_img_embeds[0][:NUM_IMGS]+1)/2.0) # Adding the original images to the plot
+from sklearn.cluster import KMeans
+
+from datetime import datetime
+
+now = datetime.now() # current date and time
+kmeans = KMeans(n_clusters=4, random_state=0).fit(train_img_embeds[1])
+print(len(kmeans.labels_))
+
+create_stitched_image(train_img_embeds[0],kmeans.labels_)
+
+
+
+writer.add_embedding(train_img_embeds[1][:NUM_IMGS], # Encodings per image
+                     metadata=[str(i) for i in kmeans.labels_ ], # Adding the labels per image to the plot
+                     label_img=(train_img_embeds[0][:NUM_IMGS]+1)/2.0,global_step=now.strftime("%m_%d_%Y__%H_%M_%S")) # Adding the original images to the plot
+
+
+
+def create_stitched_image(images,labels):
+    from glob import glob
+    import numpy as np
+    import  PIL 
+    stand_image_shape = np.array(PIL.Image.open(images[0])).shape
+    n_r = 6
+    n_c = 7
+
+    re_Stit = np.zeros((984,1092,stand_image_shape[2]))
+    r1=0
+    r2=stand_image_shape[0]
+    c1=0
+    c2=stand_image_shape[1]
+
+    for im in images:
+        print(im.shape)
+        img = PIL.Image.open(im)
+        print(r1,r2,c1,c2)
+
+        re_Stit[r1:r2,c1:c2,:] = img
+
+        c2 = c2 + stand_image_shape[1]
+        c1 = c1 + stand_image_shape[1]
+        if c1 >= stand_image_shape[1] * n_c:
+            c1=0
+            c2=156
+            r2 = r2 + stand_image_shape[0]
+            r1 = r1 + stand_image_shape[0]
+
+
+    PIL.Image.fromarray(re_Stit.astype(np.uint8)).save("restitched.png")
