@@ -67,6 +67,38 @@ device = torch.device(
 print("Device:", device)
 
 
+def create_stitched_image(images,labels):
+    from glob import glob
+    import numpy as np
+    import  PIL 
+    stand_image_shape = np.array(PIL.Image.open(images[0])).shape
+    n_r = 6
+    n_c = 7
+
+    re_Stit = np.zeros((984,1092,stand_image_shape[2]))
+    r1=0
+    r2=stand_image_shape[0]
+    c1=0
+    c2=stand_image_shape[1]
+
+    for im in images:
+        print(im.shape)
+        img = PIL.Image.open(im)
+        print(r1,r2,c1,c2)
+
+        re_Stit[r1:r2,c1:c2,:] = img
+
+        c2 = c2 + stand_image_shape[1]
+        c1 = c1 + stand_image_shape[1]
+        if c1 >= stand_image_shape[1] * n_c:
+            c1=0
+            c2=156
+            r2 = r2 + stand_image_shape[0]
+            r1 = r1 + stand_image_shape[0]
+
+
+    PIL.Image.fromarray(re_Stit.astype(np.uint8)).save("restitched.png")
+
 # Get data
 # Transformations applied on each image => only make them a tensor
 transform = transforms.Compose([
@@ -171,36 +203,3 @@ writer.add_embedding(train_img_embeds[1][:NUM_IMGS], # Encodings per image
                      metadata=[str(i) for i in kmeans.labels_ ], # Adding the labels per image to the plot
                      label_img=(train_img_embeds[0][:NUM_IMGS]+1)/2.0,global_step=now.strftime("%m_%d_%Y__%H_%M_%S")) # Adding the original images to the plot
 
-
-
-def create_stitched_image(images,labels):
-    from glob import glob
-    import numpy as np
-    import  PIL 
-    stand_image_shape = np.array(PIL.Image.open(images[0])).shape
-    n_r = 6
-    n_c = 7
-
-    re_Stit = np.zeros((984,1092,stand_image_shape[2]))
-    r1=0
-    r2=stand_image_shape[0]
-    c1=0
-    c2=stand_image_shape[1]
-
-    for im in images:
-        print(im.shape)
-        img = PIL.Image.open(im)
-        print(r1,r2,c1,c2)
-
-        re_Stit[r1:r2,c1:c2,:] = img
-
-        c2 = c2 + stand_image_shape[1]
-        c1 = c1 + stand_image_shape[1]
-        if c1 >= stand_image_shape[1] * n_c:
-            c1=0
-            c2=156
-            r2 = r2 + stand_image_shape[0]
-            r1 = r1 + stand_image_shape[0]
-
-
-    PIL.Image.fromarray(re_Stit.astype(np.uint8)).save("restitched.png")
