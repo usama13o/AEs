@@ -203,9 +203,14 @@ def load_moco_checkpoint(network,pretrained=""):
         state_dict = checkpoint['state_dict']
         for k in list(state_dict.keys()):
                 # retain only encoder_q up to before the embedding layer
-            if k.startswith('encoder_q') and not k.startswith('encoder_q.head'):
+            if k.startswith('encoder_q') and not k.startswith('encoder_q.head.0'):
                     # remove prefix
-                state_dict[k[len("encoder_q."):]] = state_dict[k]
+                if k.startswith('encoder_q.head.2.weight'):
+                    state_dict['head.weight'] = state_dict[k]
+                if k.startswith('encoder_q.head.2.bias'):
+                    state_dict['head.bias'] = state_dict[k]
+                else:
+                    state_dict[k[len("encoder_q."):]] = state_dict[k]
                 # delete renamed or unused k
             del state_dict[k]
 

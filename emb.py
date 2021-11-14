@@ -4,6 +4,7 @@ from models import load_moco_checkpoint
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from torchvision import transforms
 import torchvision
+from torch.utils.tensorboard import SummaryWriter
 import torch.utils.data as data
 import torch.nn as nn
 import torch
@@ -16,8 +17,6 @@ import matplotlib
 from matplotlib.colors import to_rgb
 
 from posixpath import split
-import tensorflow as tf
-import tensorboard as tb
 # tf.io.gfile = tb.compat.tensorflow_stub.io.gfile
 
 # Imports for plotting
@@ -47,9 +46,9 @@ except ModuleNotFoundError:  # Google Colab does not have PyTorch Lightning inst
 # Tensorboard extension (for visualization purposes later)
 
 # Path to the folder where the datasets are/should be downloaded (e.g. CIFAR10)
-DATASET_PATH = "F:\\Data\\test\\train\\cls2\\"
-DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
-DATASET_PATH = r"/mnt/data/Other/DOWNLOADS/slices (4)/slices"
+DATASET_PATH = "/mnt/data/Other/DOWNLOADS/WSIData/filtered/PNG/train/"
+# DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
+# DATASET_PATH = r"/mnt/data/Other/DOWNLOADS/slices (4)/slices"
 # Path to the folder where the pretrained models are saved
 CHECKPOINT_PATH = "./saved_models/"
 
@@ -119,38 +118,6 @@ device = torch.device(
 print("Device:", device)
 
 
-def create_stitched_image(images,labels):
-    from glob import glob
-    import numpy as np
-    import  PIL 
-    stand_image_shape = np.array(PIL.Image.open(images[0])).shape
-    n_r = 6
-    n_c = 7
-
-    re_Stit = np.zeros((984,1092,stand_image_shape[2]))
-    r1=0
-    r2=stand_image_shape[0]
-    c1=0
-    c2=stand_image_shape[1]
-
-    for im in images:
-        print(im.shape)
-        img = PIL.Image.open(im)
-        print(r1,r2,c1,c2)
-
-        re_Stit[r1:r2,c1:c2,:] = img
-
-        c2 = c2 + stand_image_shape[1]
-        c1 = c1 + stand_image_shape[1]
-        if c1 >= stand_image_shape[1] * n_c:
-            c1=0
-            c2=156
-            r2 = r2 + stand_image_shape[0]
-            r1 = r1 + stand_image_shape[0]
-
-
-    PIL.Image.fromarray(re_Stit.astype(np.uint8)).save("restitched.png")
-
 # Get data
 # Transformations applied on each image => only make them a tensor
 transform = transforms.Compose([
@@ -184,7 +151,7 @@ def get_train_images(num):
 
 
 # Check whether pretrained model exists. If yes, load it and skip training
-pretrained_filename = r"C:\Users\Usama\checkpoint_0358.pth.tar"
+pretrained_filename = r"/mnt/data/Other/DOWNLOADS/checkpoint_0358.pth (1).tar"
 model = Autoencoder(base_channel_size=128, latent_dim=128)
 load_moco_checkpoint(model.encoder,pretrained_filename)
 
