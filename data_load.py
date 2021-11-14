@@ -33,23 +33,19 @@ class glas_dataset(data.Dataset):
         # targets are a comob of two dirs 1- normal 1024 patches 2- Tum 1024
         self.image_filenames  = sorted(glob(img_dir+'/*'))
         #filter the iamges with a different size than the required one 
-        test_img = open_image_np(self.image_filenames[0])
-        test_size = test_img.shape
         print("Checking if images match standard sizes: ",test_size," ",len(self.image_filenames))
         # self.image_filenames = self.filter_size(test_size,self.image_filenames)
-        print("Changed to --> ",len(self.image_filenames))
-        del test_img
-        del test_size
         
         sp= self.image_filenames.__len__()
         sp= int(train_pct *sp)
         # random.shuffle(self.image_filenames)
         if split == 'train':
             self.image_filenames = self.image_filenames[:sp]
-        if split == 'all':
-            self.image_filenames= self.image_filenames
         else:
             self.image_filenames = self.image_filenames[sp:]
+        if split == 'all':
+            self.image_filenames= self.image_filenames
+
             # find the mask for the image
 
         # report the number of images in the dataset

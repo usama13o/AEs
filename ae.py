@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch
 from tqdm.notebook import tqdm
 import pywick.transforms.tensor_transforms as ts
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 import seaborn as sns
 import matplotlib
@@ -20,6 +21,7 @@ import json
 import math
 from posixpath import split
 import numpy as np
+from pytorch_lightning.loggers import WandbLogger
 
 # Imports for plotting
 import matplotlib.pyplot as plt
@@ -48,10 +50,9 @@ except ModuleNotFoundError:  # Google Colab does not have PyTorch Lightning inst
 
 # Path to the folder where the datasets are/should be downloaded (e.g. CIFAR10)
 DATASET_PATH = "F:\\Data\\test\\train\\cls2\\"
-DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
+# DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
 # Path to the folder where the pretrained models are saved
 CHECKPOINT_PATH = "./saved_models/"
-
 # Setting the seed
 pl.seed_everything(42)
 
@@ -133,18 +134,24 @@ def compare_imgs(img1, img2, title_prefix=""):
 #     img_masked = img.clone()
 #     img_masked[:, :img_masked.shape[1]//2, :] = img_mean
 #     compare_imgs(img, img_masked, "Masked -")
-
-
+WANDB_API_KEY="4d3d06d5a500f0245b15ee14cc3b784a37e2d7e8"
+os.environ["WANDB_API_KEY"] = WANDB_API_KEY
+wandb_logger = False
 # Training ########## Training
 def train_cifar(latent_dim):
     # Create a PyTorch Lightning trainer with the generation callback
+    # wandb_logger = WandbLogger(name=f'{latent_dim}_',project='AutoEPI')
     trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"glass_{latent_dim}"),
                          gpus=1 if str(device).startswith("cuda") else 0,
-                         max_epochs=500,
+                         max_epochs=1000,
                          callbacks=[ModelCheckpoint(save_weights_only=True),
                                     GenerateCallback(
                                         get_train_images(8), every_n_epochs=1),
-                                    LearningRateMonitor("epoch")])
+                                    LearningRateMonitor("epoch"),
+                                    EarlyStopping(monitor="val_loss")
+                                    ],
+                                    logger=wandb_logger if wandb_logger else True,
+                                    )
     # If True, we plot the computation graph in tensorboard
     trainer.logger._log_graph = True
     # Optional logging argument that we don't need
@@ -155,7 +162,7 @@ def train_cifar(latent_dim):
         CHECKPOINT_PATH, f"glass_{latent_dim}.ckpt")
     if os.path.isfile(pretrained_filename):
         print("Found pretrained model, loading...")
-        model = Autoencoder.load_from_checkpoint(pretrained_filename)
+        model = Autoencoder.load_fwrom_checkpoint(pretrained_filename)
     else:
         model = Autoencoder(base_channel_size=128, latent_dim=latent_dim)
         trainer.fit(model, train_loader, val_loader)
@@ -168,7 +175,7 @@ def train_cifar(latent_dim):
 
 
 model_dict = {}
-for latent_dim in [512, 1024]:
+for latent_dim in [2048]:
     model_ld, result_ld = train_cifar(latent_dim)
     model_dict[latent_dim] = {"model": model_ld, "result": result_ld}
 
