@@ -1,11 +1,10 @@
-from torch.utils.tensorboard import SummaryWriter
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+from models import load_moco_checkpoint
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from torchvision import transforms
-from torchvision.datasets import CIFAR10
 import torchvision
-import torch.optim as optim
 import torch.utils.data as data
-import torch.nn.functional as F
 import torch.nn as nn
 import torch
 from tqdm.notebook import tqdm
@@ -14,11 +13,8 @@ import pywick.transforms.tensor_transforms as ts
 import seaborn as sns
 import matplotlib
 from matplotlib.colors import to_rgb
-import os
-import json
-import math
+
 from posixpath import split
-import numpy as np
 import tensorflow as tf
 import tensorboard as tb
 tf.io.gfile = tb.compat.tensorflow_stub.io.gfile
@@ -50,8 +46,8 @@ except ModuleNotFoundError:  # Google Colab does not have PyTorch Lightning inst
 
 # Path to the folder where the datasets are/should be downloaded (e.g. CIFAR10)
 DATASET_PATH = "F:\\Data\\test\\train\\cls2\\"
-DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
-DATASET_PATH = r"C:\Users\Usama\AEs\slices"
+# DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
+# DATASET_PATH = r"C:\Users\Usama\AEs\slices"
 # Path to the folder where the pretrained models are saved
 CHECKPOINT_PATH = "./saved_models/"
 
@@ -102,7 +98,7 @@ def create_stitched_image(images,labels):
 # Get data
 # Transformations applied on each image => only make them a tensor
 transform = transforms.Compose([
-                                Resize((128,128)),
+                                Resize((224,224)),
                                 transforms.ToTensor(),
                                 ts.ChannelsFirst(),
                                 ts.TypeCast(['float', 'float']),
@@ -121,19 +117,19 @@ valid_dataset =glas_dataset(
     root_dir=DATASET_PATH, split='valid', transform=transform)
 
 # We define a set of data loaders that we can use for various purposes later.
-train_loader = data.DataLoader(train_dataset, batch_size=6,
+train_loader = data.DataLoader(train_dataset, batch_size=64,
                                shuffle=False, drop_last=True, pin_memory=False, num_workers=4)
 val_loader = data.DataLoader(
-    valid_dataset, batch_size=6, shuffle=False, drop_last=False, num_workers=4)
+    valid_dataset, batch_size=64, shuffle=False, drop_last=False, num_workers=4)
 
 
 def get_train_images(num):
     return torch.stack([train_dataset[i] for i in range(num)], dim=0)
 
 # Check whether pretrained model exists. If yes, load it and skip training
-pretrained_filename = r"C:\Users\Usama\saved_models\glass_1024\lightning_logs\version_0\checkpoints\epoch=499-step=13999.ckpt"
-model = Autoencoder.load_from_checkpoint(pretrained_filename)
-
+pretrained_filename = r"C:\Users\Usama\checkpoint_0358.pth.tar"
+model = Autoencoder(base_channel_size=128, latent_dim=128)
+load_moco_checkpoint(model.encoder,pretrained_filename)
 
 # We use the following model throughout this section. 
 # If you want to try a different latent dimensionality, change it here!
@@ -157,7 +153,7 @@ def embed_imgs(model, data_loader):
     return (torch.cat(img_list, dim=0), torch.cat(embed_list, dim=0))
 
 train_img_embeds = embed_imgs(model, train_loader)
-test_img_embeds = embed_imgs(model, val_loader)
+# test_img_embeds = embed_imgs(model, val_loader)
 
 
 def find_similar_images(query_img, query_z, key_embeds, K=8):
@@ -183,23 +179,25 @@ writer = SummaryWriter(CHECKPOINT_PATH)
 
 # Note: the embedding projector in tensorboard is computationally heavy.
 # Reduce the image amount below if your computer struggles with visualizing all 10k points
-NUM_IMGS = len(train_dataset) 
+NUM_IMGS = 1000
 print(NUM_IMGS)
-
-
-from sklearn.cluster import KMeans
-
+cluster  =False
 from datetime import datetime
-
 now = datetime.now() # current date and time
-kmeans = KMeans(n_clusters=4, random_state=0).fit(train_img_embeds[1])
-print(len(kmeans.labels_))
+if cluster:
 
-create_stitched_image(train_img_embeds[0],kmeans.labels_)
+    from sklearn.cluster import KMeans
+
+
+    kmeans = KMeans(n_clusters=4, random_state=0).fit(train_img_embeds[1])
+    print(len(kmeans.labels_))
+
+    create_stitched_image(train_img_embeds[0],kmeans.labels_)
+
 
 
 
 writer.add_embedding(train_img_embeds[1][:NUM_IMGS], # Encodings per image
-                     metadata=[str(i) for i in kmeans.labels_ ], # Adding the labels per image to the plot
+                    #  metadata=[str(i) for i in kmeans.labels_ ], # Adding the labels per image to the plot
                      label_img=(train_img_embeds[0][:NUM_IMGS]+1)/2.0,global_step=now.strftime("%m_%d_%Y__%H_%M_%S")) # Adding the original images to the plot
 

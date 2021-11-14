@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch
 from tqdm.notebook import tqdm
 import pywick.transforms.tensor_transforms as ts
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 import seaborn as sns
 import matplotlib
@@ -146,8 +147,11 @@ def train_cifar(latent_dim):
                          callbacks=[ModelCheckpoint(save_weights_only=True),
                                     GenerateCallback(
                                         get_train_images(8), every_n_epochs=1),
-                                    LearningRateMonitor("epoch")],
-                                    logger=wandb_logger if wandb_logger else True)
+                                    LearningRateMonitor("epoch"),
+                                    EarlyStopping(monitor="val_loss")
+                                    ],
+                                    logger=wandb_logger if wandb_logger else True,
+                                    )
     # If True, we plot the computation graph in tensorboard
     trainer.logger._log_graph = True
     # Optional logging argument that we don't need
@@ -158,7 +162,7 @@ def train_cifar(latent_dim):
         CHECKPOINT_PATH, f"glass_{latent_dim}.ckpt")
     if os.path.isfile(pretrained_filename):
         print("Found pretrained model, loading...")
-        model = Autoencoder.load_from_checkpoint(pretrained_filename)
+        model = Autoencoder.load_fwrom_checkpoint(pretrained_filename)
     else:
         model = Autoencoder(base_channel_size=128, latent_dim=latent_dim)
         trainer.fit(model, train_loader, val_loader)

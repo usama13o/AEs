@@ -1,11 +1,12 @@
 # PyTorch
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data as data
 import torch.optim as optim
 import pytorch_lightning as pl
-
+from swin_transformer import SwinTransformer
 
 class Encoder(nn.Module):
 
@@ -93,7 +94,7 @@ class Decoder(nn.Module):
         super().__init__()
         c_hid = base_channel_size
         self.linear = nn.Sequential(
-            nn.Linear(latent_dim, 2*8*8*c_hid),
+            nn.Linear(latent_dim, 2*14*14*c_hid),
             act_fn()
         )
         self.net = nn.Sequential(
@@ -121,7 +122,7 @@ class Decoder(nn.Module):
 
     def forward(self, x):
         x = self.linear(x)
-        x = x.reshape(x.shape[0], -1, 8, 8)
+        x = x.reshape(x.shape[0], -1, 14, 14)
         x = self.net(x)
         return x
 
@@ -134,14 +135,16 @@ class Autoencoder(pl.LightningModule):
                  encoder_class: object = Encoder,
                  decoder_class: object = Decoder,
                  num_input_channels: int = 3,
-                 width: int = 128,
-                 height: int = 128):
+                 width: int = 224,
+                 height: int =224):
         super().__init__()
         # Saving hyperparameters of autoencoder
         self.save_hyperparameters()
         # Creating encoder and decoder
-        self.encoder = encoder_class(
-            num_input_channels, base_channel_size, latent_dim)
+        self.encoder =  SwinTransformer(num_classes=latent_dim,img_size=width,window_size=7)
+        # self.encoder = encoder_class(
+        #     num_input_channels, base_channel_size, latent_dim
+        # )
         self.decoder = decoder_class(
             num_input_channels, base_channel_size, latent_dim)
         # Example input array needed for visualizing the graph of the network
@@ -189,3 +192,28 @@ class Autoencoder(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         loss = self._get_reconstruction_loss(batch)
         self.log('test_loss', loss)
+
+def load_moco_checkpoint(network,pretrained=""):
+    
+    if os.path.isfile(pretrained):
+        print("=> loading checkpoint '{}'".format(pretrained))
+        checkpoint = torch.load(pretrained, map_location="cpu")
+
+            # rename moco pre-trained keys
+        state_dict = checkpoint['state_dict']
+        for k in list(state_dict.keys()):
+                # retain only encoder_q up to before the embedding layer
+            if k.startswith('encoder_q') and not k.startswith('encoder_q.head'):
+                    # remove prefix
+                state_dict[k[len("encoder_q."):]] = state_dict[k]
+                # delete renamed or unused k
+            del state_dict[k]
+
+        start_epoch = 0
+        msg = network.load_state_dict(state_dict, strict=False)
+        # assert set(msg.missing_keys) == {"head.weight", "head.bias"}
+
+        print("=> loaded pre-trained model '{}'".format(pretrained))
+        print(msg)
+    else:
+        print("=> no checkpoint found at '{}'".format(pretrained))
