@@ -31,7 +31,7 @@ class glas_dataset(data.Dataset):
         super(glas_dataset, self).__init__()
         img_dir= root_dir
         # targets are a comob of two dirs 1- normal 1024 patches 2- Tum 1024
-        self.image_filenames  = sorted(glob(img_dir+'\*'))
+        self.image_filenames  = sorted(glob(img_dir+'/*'))
         #filter the iamges with a different size than the required one 
         test_img = open_image_np(self.image_filenames[0])
         test_size = test_img.shape
