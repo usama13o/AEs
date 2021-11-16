@@ -1,3 +1,4 @@
+import math
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 from models import load_moco_checkpoint
@@ -5,6 +6,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from torchvision import transforms
 import torchvision
 from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard._embedding import make_sprite
 import torch.utils.data as data
 import torch.nn as nn
 import torch
@@ -46,21 +48,22 @@ except ModuleNotFoundError:  # Google Colab does not have PyTorch Lightning inst
 # Tensorboard extension (for visualization purposes later)
 
 # Path to the folder where the datasets are/should be downloaded (e.g. CIFAR10)
-DATASET_PATH = "/mnt/data/Other/DOWNLOADS/WSIData/filtered/PNG/train/"
+# DATASET_PATH = "/mnt/data/Other/DOWNLOADS/WSIData/filtered/PNG/train/"
 # DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
-# DATASET_PATH = r"/mnt/data/Other/DOWNLOADS/slices (4)/slices"
+DATASET_PATH = r"/mnt/data/Other/DOWNLOADS/slices (4)/slices"
 # Path to the folder where the pretrained models are saved
 CHECKPOINT_PATH = "./saved_models/"
 
 
 def create_stitched_image(images, labels):
+    print("images have the shape : ", images.shape)
     colors = [
 
     (255,255,255),
-    (0,0,0),
-    (100,0,100),
-    (200,0,200),
-    (0,0,255),
+    (0,98,255),
+    (229,255,0),
+    (255,0,255),
+    (255,55,0),
     (255,255,0),
     (24,55,0),
     (155,0,0),
@@ -70,40 +73,26 @@ def create_stitched_image(images, labels):
     import PIL
     # images = images.detach().permute(0,2,3,1).numpy()
     # stand_image_shape = images[0].shape
-    img = glob(DATASET_PATH+'/*')[1]
-    stand_image_shape = np.array(PIL.Image.open(img)).shape
-    n_r = 6
-    n_c = 7
 
-    re_Stit = np.zeros(
-        (n_r * stand_image_shape[0], n_c * stand_image_shape[1], stand_image_shape[2]))
-
-    r1 = 0
-    r2 = stand_image_shape[0]
-    c1 = 0
-    c2 = stand_image_shape[1]
-
-    for idx,im in enumerate(sorted(glob(DATASET_PATH+'/*'))):
-        l = colors[labels[idx]]
-        print(im)
-        img = PIL.Image.open(im)
-        overlay = ImageDraw.Draw(img)
-        overlay.rectangle((0, 0, img.size[0], img.size[1]),
+    # make_sprite(images,save_path='./')
+    mod_images = []
+    for idx,im in enumerate(images):
+        colour = colors[labels[idx]]
+        im = im.cpu().permute(1,2,0).numpy()
+        im = np.uint8(im * 255).clip(0,255)
+        # im = np.uint8(im)
+        im = PIL.Image.fromarray(im)
+        overlay = ImageDraw.Draw(im)
+        overlay.rectangle((0, 0, im.size[0], im.size[1]),
                           fill=None,
-                          outline=l, width=5)
-        print(r1, r2, c1, c2)
+                          outline=colour, width=5)
 
-        re_Stit[r1:r2, c1:c2, :] = img
+        mod_images.append(np.array(im))
+    mod_images = torch.Tensor(mod_images).permute(0,3,1,2)
+    del images
+    print('Making sprite image: ', mod_images.shape)
+    make_sprite(mod_images,save_path='./')
 
-        c2 = c2 + stand_image_shape[1]
-        c1 = c1 + stand_image_shape[1]
-        if c1 >= stand_image_shape[1] * n_c:
-            c1 = 0
-            c2 = stand_image_shape[1]
-            r2 = r2 + stand_image_shape[0]
-            r1 = r1 + stand_image_shape[0]
-
-    PIL.Image.fromarray(re_Stit.astype(np.uint8)).save("restitched.png")
 
 
 # Setting the seed
@@ -126,7 +115,6 @@ transform = transforms.Compose([
                                 ts.ChannelsFirst(),
                                 ts.TypeCast(['float', 'float']),
                                 ts.ChannelsLast(),
-                                # ts.AddChannel(axis=0),
                                 ts.TypeCast(['float', 'long']),
                                 ])
 
@@ -164,7 +152,7 @@ def embed_imgs(model, data_loader):
     img_list, embed_list = [], []
     model.eval()
     max = 0
-    for imgs in tqdm(data_loader, desc="Encoding images", leave=False):
+    for imgs in tqdm(data_loader, desc="Encoding images", leave=False,total=len(data_loader)):
         max += 1
         with torch.no_grad():
             # print("Encoding image")
@@ -178,7 +166,7 @@ def embed_imgs(model, data_loader):
 
 
 train_img_embeds = embed_imgs(model, train_loader)
-# test_img_embeds = embed_imgs(model, val_loader)
+# train_img_embeds  = embed_imgs(model, val_loader)
 
 
 def find_similar_images(query_img, query_z, key_embeds, K=8):
@@ -198,8 +186,8 @@ def find_similar_images(query_img, query_z, key_embeds, K=8):
     plt.show()
 
 # Plot the closest images for the first N test images as example
-# for i in range(8):
-    # find_similar_images(test_img_embeds[0][i], test_img_embeds[1][i], key_embeds=train_img_embeds)
+for i in range(8):
+    find_similar_images(train_img_embeds[0][i],train_img_embeds[1][i], key_embeds=train_img_embeds)
 
 
 # Create a summary writer
@@ -209,7 +197,7 @@ writer = SummaryWriter(CHECKPOINT_PATH)
 # Reduce the image amount below if your computer struggles with visualizing all 10k points
 NUM_IMGS = 1000
 print(NUM_IMGS)
-cluster  =False
+cluster  = True 
 from datetime import datetime
 now = datetime.now() # current date and time
 if cluster:
@@ -220,7 +208,7 @@ if cluster:
     kmeans = KMeans(n_clusters=4, random_state=0).fit(train_img_embeds[1])
     print(len(kmeans.labels_))
 
-    create_stitched_image(train_img_embeds[0],kmeans.labels_)
+    create_stitched_image((train_img_embeds[0][:NUM_IMGS]+1)/1.0,kmeans.labels_)
 
 
 
