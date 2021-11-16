@@ -14,7 +14,8 @@ class Encoder(nn.Module):
                  num_input_channels: int,
                  base_channel_size: int,
                  latent_dim: int,
-                 act_fn: object = nn.GELU):
+                 act_fn: object = nn.GELU,
+                 img_size=128):
         """
         Inputs: 
             - num_input_channels : Number of input channels of the image. For CIFAR, this parameter is 3
@@ -24,6 +25,7 @@ class Encoder(nn.Module):
         """
         super().__init__()
         c_hid = base_channel_size
+        self.last_dim = int(img_size / 16 )
         self.net = nn.Sequential(
             nn.Conv2d(num_input_channels, c_hid, kernel_size=3,
                       padding=1, stride=2),  # 32x32 => 16x16
@@ -41,7 +43,7 @@ class Encoder(nn.Module):
             nn.Conv2d(2*c_hid, 2*c_hid, kernel_size=3,padding=1, stride=2),  # 8x8 => 4x4
             act_fn(),
             nn.Flatten(),  # Image grid to single feature vector
-            nn.Linear(2*8*8*c_hid, latent_dim)
+            nn.Linear(2*(self.last_dim)*(self.last_dim)*c_hid, latent_dim)
         )
 
         # self.conv1 = nn.Conv2d(
@@ -83,6 +85,7 @@ class Decoder(nn.Module):
                  num_input_channels: int,
                  base_channel_size: int,
                  latent_dim: int,
+                 img_size = 128,
                  act_fn: object = nn.GELU):
         """
         Inputs: 
@@ -93,8 +96,9 @@ class Decoder(nn.Module):
         """
         super().__init__()
         c_hid = base_channel_size
+        self.last_dim = int(img_size / 16)
         self.linear = nn.Sequential(
-            nn.Linear(latent_dim, 2*14*14*c_hid),
+            nn.Linear(latent_dim, 2*(self.last_dim)*(self.last_dim)*c_hid),
             act_fn()
         )
         self.net = nn.Sequential(
@@ -122,7 +126,7 @@ class Decoder(nn.Module):
 
     def forward(self, x):
         x = self.linear(x)
-        x = x.reshape(x.shape[0], -1, 14, 14)
+        x = x.reshape(x.shape[0], -1, self.last_dim, self.last_dim)
         x = self.net(x)
         return x
 
@@ -141,12 +145,11 @@ class Autoencoder(pl.LightningModule):
         # Saving hyperparameters of autoencoder
         self.save_hyperparameters()
         # Creating encoder and decoder
-        self.encoder =  SwinTransformer(num_classes=latent_dim,img_size=width,window_size=7)
-        # self.encoder = encoder_class(
-        #     num_input_channels, base_channel_size, latent_dim
-        # )
+        # self.encoder =  SwinTransformer(num_classes=latent_dim,img_size=width,window_size=7)
+        self.encoder = encoder_class(num_input_channels, base_channel_size, latent_dim,
+        img_size=width)
         self.decoder = decoder_class(
-            num_input_channels, base_channel_size, latent_dim)
+            num_input_channels, base_channel_size, latent_dim,img_size=width)
         # Example input array needed for visualizing the graph of the network
         self.example_input_array = torch.zeros(
             2, num_input_channels, width, height)
