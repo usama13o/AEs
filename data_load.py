@@ -79,7 +79,12 @@ class glas_dataset(data.Dataset):
         if self.transform:
             input = self.transform(input)
 
-        return input
+        if index >=1700 and index < 1800:
+            targ = 1
+        else:
+            targ = 0
+
+        return (input,targ)
 
     def __len__(self):
         return len(self.image_filenames)
