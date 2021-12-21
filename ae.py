@@ -166,6 +166,8 @@ def train_cifar(latent_dim):
     else:
         model = Autoencoder(base_channel_size=128, latent_dim=latent_dim)
         trainer.fit(model, train_loader, val_loader)
+    
+    
     # Test best model on validation and test set
     val_result = trainer.test(
         model, test_dataloaders=val_loader, verbose=False)
