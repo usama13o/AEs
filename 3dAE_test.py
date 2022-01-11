@@ -33,11 +33,12 @@ from matplotlib.colors import to_rgb
 import os
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
+from deeplab import deeplab
 
-from helpers import GenerateCallback, GenerateTestCallback, HookBasedFeatureExractorCallback
+from helpers import GenerateCallback, GenerateTestCallback, HookBasedFeatureExractorCallback, K_means_callback
 
 from unet_3D import unet_3D
-
+from argumentparser import args
 
 
 import datetime 
@@ -103,15 +104,14 @@ class GeoFolders(torchvision.datasets.ImageFolder):
         self.raw_dir = raw_dir 
         self.raw_dir = Path(self.raw_dir)
         super(GeoFolders,self).__init__(root,transform)
-        self.samples = [x for x in self.samples if x[1]==1]
-        self.samples.extend([x for x in self.imgs if x[1] ==0][:1000])
+        self.samples = (sorted(self.samples,key=lambda x: int(Path(x[0]).stem)))
         print("Current smaple count ", len(self.samples))
     def __getitem__(self, index: int):
 
         path, target = self.samples[index]
         path = Path(path)
         #search for the equaivlant tile in the raw tiles
-        path= next(self.raw_dir.glob(f'*{path.stem}.pickle'))
+        path= self.raw_dir.joinpath(f'{path.stem}.pickle')
         #return actula color tile fro testing 
         color_path = np.array(PIL.Image.open(self.samples[index][0]))
 
@@ -136,6 +136,7 @@ transform = transforms.Compose([
     # Resize((128, 128)),
     transforms.ToTensor(),
     ts.TypeCast(['float', 'float']),
+    ts.StdNormalize(),
     # transforms.RandomApply(torch.nn.ModuleList([
         # transforms.GaussianBlur((3, 3)),
     # ]), p=0.3),
@@ -153,7 +154,11 @@ print("Device:", device)
 # make into args 
 resume=True
 kfold=True
-DATASET_PATH ="/home/uz1/data/geo/slices/64/geo2_org"
+if args.geo=='2':
+    DATASET_PATH ="/home/uz1/data/geo/slices/64/geo2_org"
+    DATASET_PATH ="/home/uz1/data/geo/slices/geo2_slices_pil/geo2/64"
+else:
+    DATASET_PATH ="/home/uz1/data/geo/slices/64/geo_org"
 # DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
 # Path to the folder where the pretrained models are saved
 CHECKPOINT_PATH =  "./saved_models_3dAE/"
@@ -165,15 +170,19 @@ from torchvision.datasets import ImageFolder
 # valid_dataset =glas_dataset(
     # root_dir=DATASET_PATH, split='valid', transform=transform)
 
-train_dataset = GeoFolders(
-    root=DATASET_PATH,  transform=transform,raw_dir="/home/uz1/data/geo/slices/64/geo2_org_raw/0/")
-train_dataset= GeoFolders(
-    root='/home/uz1/data/geo/slices/geo1_slices_pil/geo1/64',  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/0')
+if args.geo=='2':
+    train_dataset = GeoFolders(
+    root=DATASET_PATH,  transform=transform,raw_dir="/home/uz1/data/geo/slices/64/geo2_raw_unclipped/0/")
+    train_dataset = GeoFolders(
+    root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/')
+else:
+    train_dataset= GeoFolders(
+    root='/home/uz1/data/geo/slices/64/geo_org/',  transform=transform,raw_dir='/home/uz1/data/geo/slices/64/geo_raw_unclipped/0/')
 
 from sklearn.model_selection import StratifiedShuffleSplit
 
-train_loader = data.DataLoader(train_dataset, batch_size=1,
-                            shuffle=False, drop_last=True, pin_memory=False, num_workers=8)
+train_loader = data.DataLoader(train_dataset, batch_size=300,
+                            shuffle=False, drop_last=False, pin_memory=False, num_workers=8)
 
 
 
@@ -189,8 +198,10 @@ trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_TEST.
                         limit_train_batches=0,
                         limit_val_batches=0,
                         callbacks=[
-                                GenerateTestCallback(
-                                    get_train_images(200), every_n_epochs=1),
+                                # GenerateTestCallback(
+                                    # get_train_images(len(train_dataset)), every_n_epochs=1),
+                                K_means_callback(
+                                    get_train_images(len(train_dataset)), every_n_epochs=1),
                                 HookBasedFeatureExractorCallback()
                                 ],
                         log_every_n_steps=1        
@@ -203,18 +214,27 @@ trainer.logger._default_hp_metric = None
 
 # Check whether pretrained model exists. If yes, load it and skip training
 try:
-    pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_1.ckpt/lightning_logs/version_6/checkpoints/epoch=34-step=279.ckpt"
+    pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/version_13/checkpoints/epoch=25-step=207.ckpt"
+    pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/version_17/checkpoints/epoch=18-step=151.ckpt"
+    pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/version_16_FULL_CLASS/checkpoints/epoch=63-step=511.ckpt"
+    pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/version_22/checkpoints/epoch=977-step=6845.ckpt"
+    pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_1.ckpt/lightning_logs/version_14/checkpoints/epoch=823-step=5767.ckpt"
+    pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0_.ckpt/lightning_logs/version_1/checkpoints/epoch=106-step=8452.ckpt"
+    if args.pretrained:
+        pretrained_filename = args.pretrained
 except:
     pretrained_filename = False
     resume=False
-if os.path.isfile(pretrained_filename) and resume ==True:
+if os.path.isfile(pretrained_filename) and resume ==True: 
     print("Found pretrained model, loading...")
-    model = unet_3D.load_from_checkpoint(pretrained_filename.__str__())
-else:
-    model = unet_3D(n_classes=1,in_channels=1,proj_output_dim=1024,pred_hidden_dim=512)
+    # model = unet_3D.load_from_checkpoint(pretrained_filename)
+    model =deeplab.load_from_checkpoint(pretrained_filename,num_classes=9,proj_output_dim=1024,pred_hidden_dim=512,num_ch=9)
+    # model = deeplab(num_classes=9,proj_output_dim=1024,pred_hidden_dim=512,num_ch=9)
+# else:
+    # model = unet_3D(n_classes=1,in_channels=1,proj_output_dim=1024,pred_hidden_dim=512)
     
 
-
+print("Running model from file:  ",pretrained_filename)
 trainer.fit(model, train_loader)
 trainer.test(model,train_loader)
 

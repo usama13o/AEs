@@ -87,6 +87,7 @@ def create_stitched_image(images, embeds,labels):
         # im = np.uint8(im)
         im = PIL.Image.fromarray(im)
         overlay = ImageDraw.Draw(im)
+        
         overlay.rectangle((0, 0, im.size[0], im.size[1]),
                           fill=None,
                           outline=colour, width=5)

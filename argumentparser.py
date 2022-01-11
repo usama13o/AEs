@@ -1,0 +1,21 @@
+import argparse
+
+parser = argparse.ArgumentParser(description='GEO Training Function')
+parser.add_argument('--tag',   help='tags passed to pytroch lightning logs' , type=str,default="")
+parser.add_argument('--geo',   help='which image to train on?' , type=str,default="2")
+parser.add_argument('--balance', dest='balance', action='store_true')
+parser.add_argument('--no-balance', dest='balance', action='store_false')
+parser.set_defaults(balance=True)
+parser.add_argument('--pretrained', help='path to pre trained model', type=str)
+
+parser.add_argument('-wandb', '--use_wandb',   help='use wandb to log the training',type=bool)
+parser.add_argument('-seed',help='Use the same seed>',type=bool)
+parser.add_argument('-wep', '--which_epoch',   help='which epoch to continue training from?',type=int)
+parser.add_argument('-maxlr', '--max_lr',   help='maximum learning rate for cyclic learning',  type=float)
+parser.add_argument('-bs', '--batchSize',   help='batch size',type=int)
+parser.add_argument('-cv', '--cross_val',   help='Cross validation folds',type=int,default=1)
+parser.add_argument('-ep', '--n_epochs',   help='number of epochs', type=int)
+parser.add_argument('-img', '--img_size',   help='number of epochs', type=int)
+parser.add_argument('-out', '--output_nc',   help='Number of output classes', type=int)
+parser.add_argument('--gpu_ids',   help='gpu id to use for trianing' , type=int,default=0)
+args = parser.parse_args()

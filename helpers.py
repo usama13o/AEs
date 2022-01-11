@@ -1,5 +1,7 @@
 
 import math
+import os
+import pickle
 ## PyTorch
 from typing import Iterable
 import torch
@@ -32,7 +34,7 @@ class Hook():
     def hook_fn(self, module, input, output):
         "Applies `hook_func` to `module`, `input`, `output`."
         if self.detach:
-            input,output = input[0].detach() , output.detach()
+            input,output = input[0].detach() , output[0].detach()
         self.stored = self.hook_func(module, input, output)
 
     def remove(self):
@@ -127,6 +129,7 @@ class HookBasedFeatureExractorCallback(pl.Callback):
         self.stats_valid_epoch = []
         self.shape_out={}
         self.useClasses = False
+        self.done=False
 
     def hook(self, m:nn.Module, i, o):
         if (isinstance(o,torch.Tensor)) and (m not in self.shape_out):
@@ -144,27 +147,31 @@ class HookBasedFeatureExractorCallback(pl.Callback):
             self.cur_train_batch +=1
     def on_batch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         "Take the stored results and puts it in `self.stats_hist`"
-        hasValues = True if ((len(self.hooks.stored)>0) and (not (self.hooks.stored[0] is None))) else False
-        stacked = torch.stack(self.hooks.stored).unsqueeze(1)  if hasValues else None
-        # if train and hasValues:
-        if self.stats_hist is None: self.stats_hist = stacked #start
-        else: self.stats_hist = torch.cat([self.stats_hist,stacked],dim=1) #cat
-    #     if (not train) and hasValues:
-    #         if self.stats_valid_hist is None: self.stats_valid_hist = stacked #start
-    #         else: self.stats_valid_hist = torch.cat([self.stats_valid_hist,stacked],dim=1) #cat
-    # def on_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
-        # if trainer.current_epoch % 10:
-        self.plotActsHist()
+        if not self.done:
+            hasValues = True if ((len(self.hooks.stored)>0) and (not (self.hooks.stored[0] is None))) else False
+            stacked = torch.stack(self.hooks.stored).unsqueeze(1)  if hasValues else None
+            # if train and hasValues:
+            if self.stats_hist is None: self.stats_hist = stacked #start
+            else: self.stats_hist = torch.cat([self.stats_hist,stacked],dim=1) #cat
+        #     if (not train) and hasValues:
+        #         if self.stats_valid_hist is None: self.stats_valid_hist = stacked #start
+        #         else: self.stats_valid_hist = torch.cat([self.stats_valid_hist,stacked],dim=1) #cat
+        # def on_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+            # if trainer.current_epoch % 10:
+            self.plotActsHist()
     
     def on_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self.stats_epoch.append(self.cur_train_batch)
+        if  (trainer.current_epoch > 10) :
+            self._remove()
+            self.done=True
     def on_fit_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         self._remove()
     def _remove(self):
         if getattr(self, 'hooks', None): self.hooks.remove()
     def __del__(self): self._remove()
 
-    def plotActsHist(self, cols=3, figsize=(50,20), toDisplay=None, hScale = .05, showEpochs=True, showLayerInfo=False, aspectAuto=True, showImage=True):
+    def plotActsHist(self, cols=1, figsize=(30,50), toDisplay=None, hScale = .05, showEpochs=True, showLayerInfo=False, aspectAuto=True, showImage=True):
             histsTensor = self.stats_hist
             hists = [histsTensor[i] for i in range(histsTensor.shape[0])]
             if toDisplay: hists = [hists[i] for i in listify(toDisplay)] # optionally focus
@@ -256,13 +263,16 @@ class GenerateCallback(pl.Callback):
             plt.xticks([])
             plt.yticks([])
             plt.grid(False)
-            plt.imshow(self.target_imgs[i], cmap=plt.cm.coolwarm)
+            if self.target_imgs[i].shape[0] <= 4:
+                plt.imshow(self.target_imgs[i].permute(1,2,0), cmap=plt.cm.coolwarm)
+            else:
+                plt.imshow(self.target_imgs[i], cmap=plt.cm.coolwarm)
         return figure
         
     def on_epoch_end(self, trainer, pl_module):
         if trainer.current_epoch % self.every_n_epochs == 0:
             # Reconstruct images
-            input_imgs = self.input_imgs.to(pl_module.device).unsqueeze(1)
+            input_imgs = self.input_imgs.to(pl_module.device)
             with torch.no_grad():
                 pl_module.eval()
                 reconst_imgs,_,pred = pl_module(input_imgs)
@@ -303,14 +313,15 @@ class GenerateTestCallback(pl.Callback):
     def on_epoch_end(self, trainer, pl_module):
         if trainer.current_epoch % self.every_n_epochs == 0:
             # Reconstruct images
-            input_imgs = self.input_imgs.to(pl_module.device).unsqueeze(1)
+            input_imgs = self.input_imgs.to(pl_module.device)
             with torch.no_grad():
                 pl_module.eval()
                 reconst_imgs,embeds,pred = pl_module(input_imgs)
                 pl_module.train()
             #log prediction for classification 
+            pred_logs=pred.cpu().numpy()
             pred = pred.softmax(1).argmax(1)
-            fig = create_stitched_image(np.array(self.target_imgs),pred)
+            fig = create_stitched_image(np.array(self.target_imgs),pred,pred_logs)
             
             # trainer.logger.experiment.add_figure('Predictions',fig,global_step=trainer.global_step)
             
@@ -326,7 +337,64 @@ class GenerateTestCallback(pl.Callback):
                 trainer.logger.experiment.log({"Reconstructions": grid})
 
 
-def create_stitched_image(images,labels):
+class K_means_callback(pl.Callback):
+    
+    def __init__(self, input_imgs, every_n_epochs=1):
+        super().__init__()
+        self.input_imgs = torch.stack([x[0] for x in input_imgs],dim=0)# Images to reconstruct during training
+        self.targets = [x[1] for x in input_imgs]
+        self.target_imgs = [x[2] for x in input_imgs]
+        self.every_n_epochs = every_n_epochs # Only save those images every N epochs (otherwise tensorboard gets quite large)
+    def plot_imgs(self,pred,n_cols=4):
+        figure = plt.figure(figsize=(12,8))
+        n_rows=int(len(pred) /n_cols)
+
+        for i in range(len(self.targets)):    
+            plt.subplot(n_rows, n_cols, i + 1)
+            plt.xlabel(f"GT: {self.targets[i]}  predicted : {pred[i]}")
+            plt.xticks([])
+            plt.yticks([])
+            plt.grid(False)
+            plt.imshow(self.target_imgs[i], cmap=plt.cm.coolwarm)
+        return figure
+        
+    def on_epoch_end(self, trainer, pl_module):
+        if trainer.current_epoch % self.every_n_epochs == 0:
+            # Reconstruct images
+            input_imgs = self.input_imgs.to(pl_module.device)
+            embeds_list=[]
+            with torch.no_grad():
+                pl_module.eval()
+                for input in input_imgs:
+                    reconst_imgs,embeds,pred = pl_module(input.unsqueeze(0))
+                    embeds_list.append(embeds)
+            pl_module.train()
+            embeds = torch.stack(embeds_list).squeeze()
+            
+            #log prediction for classification 
+            pred_logs=pred.cpu().numpy()
+            pred = pred.softmax(1).argmax(1)
+            
+            # trainer.logger.experiment.add_figure('Predictions',fig,global_step=trainer.global_step)
+            from sklearn.cluster import AgglomerativeClustering
+            embeds=embeds.cpu()
+            cluster = AgglomerativeClustering(n_clusters=4, affinity='euclidean', linkage='ward')
+            cluster.fit_predict(embeds)
+
+            plt.figure()
+            plt.figure(figsize=(10, 7))
+            plt.scatter(embeds[:,0], embeds[:,1], c=cluster.labels_, cmap='rainbow')
+            plt.savefig('test_fig.png')
+            plt.close()
+            with open("k_labels_.pickle", "wb") as f_out:
+	            pickle.dump(cluster.labels_, f_out)
+            # Plot and add to tensorboard
+            fig = create_stitched_image(np.array(self.target_imgs),cluster.labels_)
+            trainer.logger.experiment.add_embedding(embeds,  # Encodings per image
+                     label_img=fig[:,:3,:,:], global_step=trainer.global_step,metadata=list(cluster.labels_))
+
+
+def create_stitched_image(images,labels,logs=None):
     print("images have the shape : ", images.shape)
     colors = [
 
@@ -353,6 +421,10 @@ def create_stitched_image(images,labels):
         # im = np.uint8(im)
         im = PIL.Image.fromarray(im)
         overlay = ImageDraw.Draw(im)
+        # overlay.text((10, 10), str(logs[idx,0]), (255, 255, 255),
+                #  ImageFont.load_default(),stroke_fill=1)
+        # overlay.text((10, 20), str(logs[idx,1]), (255, 255, 255),
+                #  ImageFont.load_default(),stroke_fill=1)
         overlay.rectangle((0, 0, im.size[0], im.size[1]),
                         fill=None,
                         outline=colour, width=5)

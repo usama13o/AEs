@@ -36,10 +36,13 @@ import numpy as np
 from pytorch_lightning.loggers import WandbLogger
 
 from helpers import GenerateCallback, HookBasedFeatureExractorCallback
+from deeplab import deeplab
 
 from unet_3D import unet_3D
+from torchsampler import ImbalancedDatasetSampler
 
 
+from argumentparser import args
 
 import datetime 
 
@@ -100,30 +103,39 @@ class glas_dataset(data.Dataset):
 
 class GeoFolders(torchvision.datasets.ImageFolder):
 
-    def __init__(self,root,transform,raw_dir,target_transform=None):
+    def __init__(self,root,transform,raw_dir,balance=True,k_labels_path=None):
         self.raw_dir = raw_dir 
         self.raw_dir = Path(self.raw_dir)
         super(GeoFolders,self).__init__(root,transform)
-        self.samples = [x for x in self.samples if x[1]==1]
-        self.samples.extend(sample([x for x in self.imgs if x[1] ==0],1000))
+        self.k_labels_path = k_labels_path if k_labels_path is not None else None 
+        if balance:
+            self.samples = [x for x in self.samples if x[1]==1]
+            self.samples.extend(sample([x for x in self.imgs if x[1] ==0],1000))
+        else:
+            self.samples=self.imgs
+            self.samples = (sorted(self.samples,key=lambda x: int(Path(x[0]).stem)))
         print("Current smaple count ", len(self.samples))
     def __getitem__(self, index: int):
 
         path, target = self.samples[index]
         path = Path(path)
         #search for the equaivlant tile in the raw tiles
-        path= next(self.raw_dir.glob(f'*{path.stem}.pickle'))
+        path= self.raw_dir.joinpath(f'{path.stem}.pickle')
+
         #return actula color tile fro testing 
         color_path = np.array(PIL.Image.open(self.samples[index][0]))
 
         input  = open_pickled_file(path)
-
+        k_label = open_pickled_file(self.k_labels_path)[index] if self.k_labels_path is not None else None
         # handle exceptions
         # check_exceptions(input, target)
         if self.transform:
             input = self.transform(input)
+            # color_path=self.transform(color_path)
 
-
+        if k_label is not None:
+            # print(str(target),"mapped to ",str(k_label)) # 0 (0,2) | 1 (1,3)
+            return input,k_label,color_path
         return input,target,color_path
 
 
@@ -140,6 +152,7 @@ transform = transforms.Compose([
     transforms.RandomVerticalFlip(),
     transforms.RandomRotation(15),
     ts.TypeCast(['float', 'float']),
+    ts.StdNormalize(),
     # transforms.RandomApply(torch.nn.ModuleList([
         # transforms.GaussianBlur((3, 3)),
     # ]), p=0.3),
@@ -170,9 +183,10 @@ from torchvision.datasets import ImageFolder
     # root_dir=DATASET_PATH, split='valid', transform=transform)
 
 train_dataset = GeoFolders(
-    root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2/0/')
-valid_dataset= GeoFolders(
-    root='/home/uz1/data/geo/slices/geo1_slices_pil/geo1/64',  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/0')
+    root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/',balance=args.balance,k_labels_path="/home/uz1/k_labels_.pickle")
+
+# valid_dataset= GeoFolders(
+    # root='/home/uz1/data/geo/slices/geo1_slices_pil/geo1/64',  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/0')
 #
 from sklearn.model_selection import StratifiedShuffleSplit
 def try_my_operation(item): return item[1]
@@ -186,10 +200,21 @@ else:
     list_targs=np.zeros(len(train_dataset))
     
 splits = StratifiedShuffleSplit(10)
+
+get_labels = lambda a,i: [int(x[1]) for x in np.array(a.samples)[i]]
 for fold, (train_idx,val_idx) in enumerate(splits.split(np.arange(len(train_dataset)),list_targs)):
-    train_sampler = SubsetRandomSampler(train_idx)
+    train_sampler = ImbalancedDatasetSampler(train_dataset,train_idx)
+    test_sampler = ImbalancedDatasetSampler(train_dataset,val_idx)
+
+    ss=[]
+    #counts class dist
+    for idx,val in enumerate(list(train_sampler)):
+        ss.append(list_targs[val])
+    
+
+    print(f"** No. of train samples for fold({fold}) is {len(train_idx)} - 0/1 = {str(np.unique(ss,return_counts=True)[1])}")
+    print(f"** No. of validation samples for fold({fold}) is {len(val_idx)}")
         
-    test_sampler = SubsetRandomSampler(val_idx)
     #  We define a set of data loaders that we can use for various purposes later.
     train_loader = data.DataLoader(train_dataset, batch_size=128,
                                 shuffle=False, drop_last=True, pin_memory=False, num_workers=8,sampler=train_sampler if train_sampler else None)
@@ -210,15 +235,15 @@ for fold, (train_idx,val_idx) in enumerate(splits.split(np.arange(len(train_data
 
 
     # wandb_logger = WandbLogger(name=f'{latent_dim}_',project='AutoEPI')
-    trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_{fold}.ckpt"),
+    trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_{fold}_{args.tag}.ckpt"),
                             gpus=[1] if str(device).startswith("cuda") else 0,
                             max_epochs=1000,
                             callbacks=[ModelCheckpoint(save_top_k=2,monitor='class_loss_val',save_weights_only=True),
                                     GenerateCallback(
                                         get_train_images(12), every_n_epochs=1),
                                     LearningRateMonitor("epoch"),
-                                    EarlyStopping(monitor="class_loss_val",patience=10,verbose=True),
-                                    HookBasedFeatureExractorCallback()
+                                    EarlyStopping(monitor="class_loss_val",patience=50,verbose=True),
+                                    # HookBasedFeatureExractorCallback()
                                     ],
                             log_every_n_steps=1        
                                     )
@@ -228,17 +253,17 @@ for fold, (train_idx,val_idx) in enumerate(splits.split(np.arange(len(train_data
     trainer.logger._default_hp_metric = None
 
 
-    # Check whether pretrained model exists. If yes, load it and skip training
-    try:
-        pretrained_filename = next(Path('/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/').joinpath(f"version_{len(list(Path('/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/').glob('*')))-1}/checkpoints/").glob('*'))
-    except:
-        pretrained_filename = False
-        resume=False
-    if os.path.isfile(pretrained_filename) and resume ==True:
-        print("Found pretrained model, loading...")
-        model = unet_3D.load_from_checkpoint(pretrained_filename.__str__())
-    else:
-        model = unet_3D(n_classes=1,in_channels=1,proj_output_dim=1024,pred_hidden_dim=512)
+
+    # pretrained_filename = next(Path('/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/').joinpath(f"version_{len(list(Path('/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/').glob('version_*')))-1}/checkpoints/").glob('*'))
+    # # Check whether pretrained model exists. If yes, load it and skip training
+    # if os.path.isfile(pretrained_filename) and resume ==True:
+    #     print("Found pretrained model, loading...")
+    #     try:
+    #         # assert 1==0
+    #         model = unet_3D.load_from_checkpoint(pretrained_filename.__str__())
+    #     except:
+    #         model = unet_3D(n_classes=1,in_channels=1,proj_output_dim=1024,pred_hidden_dim=512)
+    model = deeplab(num_classes=9,proj_output_dim=1024,pred_hidden_dim=512,num_ch=9)
     trainer.fit(model, train_loader,val_loader)
 
 

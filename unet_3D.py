@@ -24,7 +24,7 @@ class unet_3D(pl.LightningModule):
         filters = [int(x / self.feature_scale) for x in filters]
 
         # downsampling
-        self.conv1 = UnetConv3(self.in_channels, filters[0], self.is_batchnorm,kernel_size=(3,3,3),padding_size=(1,1,1))
+        self.conv1 = UnetConv3(self.in_channels, filters[0], self.is_batchnorm,kernel_size=(1,3,3),padding_size=(0,1,1))
         self.maxpool1 = nn.MaxPool3d(kernel_size=(1, 2, 2))
 
         self.conv2 = UnetConv3(filters[0], filters[1], self.is_batchnorm)
@@ -48,7 +48,7 @@ class unet_3D(pl.LightningModule):
         self.final = nn.Conv3d(filters[0], n_classes, 1)
          # projector
         self.projector = nn.Sequential(
-            nn.Linear(filters[4] * 9 * 4*4, pred_hidden_dim),
+            nn.Linear(filters[4] * 9* 4*4, pred_hidden_dim),
             nn.BatchNorm1d(pred_hidden_dim),
             nn.ReLU(),
             nn.Linear(pred_hidden_dim, proj_output_dim),

@@ -11,14 +11,20 @@ import pickle
 import tifffile
 import numpy as np
 
-image= tifffile.imread('/home/uz1/data/geo/full_image/0/geo2.tif').clip(0,255).astype(np.uint8).transpose(1,2,0)
+SAVE_AS_PICKLE = True
+IMG_TO_SLICE = "/home/uz1/data/geo/9-Bands_Composite_Tiff (1).tif"
+if '.tif' in IMG_TO_SLICE:
+    image= tifffile.imread(IMG_TO_SLICE).transpose(1,2,0)
+else:
+    with open(IMG_TO_SLICE, "rb") as f_in:
+        image = pickle.load(f_in)
 print(image.shape)
 
 
 img = image.shape
-stride = (64,64)
+stride = (10,10)
 output_size=(64,64)
-SAVE_DIR = f"/home/uz1/data/geo/slices/" + str(output_size[0])+ '/geo2_org'
+SAVE_DIR = f"/home/uz1/data/geo/slices_raw/" + str(output_size[0])+ '/geo_raw_unclipped'
 
 y=img[1]
 x=img[0]
@@ -89,10 +95,11 @@ class ImageSlicer(object):
             
         else:
             if self.source and not(self.BATCH):
-                if '.tif' in self.source:
-                  Image= tifffile.imread(self.source).clip(0,255).astype(np.uint8).transpose(1,2,0)
+            
+                if '.tif' in self.source or 'tif' in self.source:
+                  Image= tifffile.imread(self.source).transpose(1,2,0)
                   Images=[Image]
-                if '.pickle' in self.source:
+                elif '.pickle' in self.source:
                     with open(self.source, "rb") as f_in:
                         Images = pickle.load(f_in)
                     Images=[Images]    
@@ -200,7 +207,7 @@ except Exception:
   print('File exists ') 
   
   
-slicer = ImageSlicer('/home/uz1/data/geo/full_image/0/geo2.tif', output_size,stride) #Provide image path and slice size you desire
+slicer = ImageSlicer(IMG_TO_SLICE, output_size,stride) #Provide image path and slice size you desire
 transformed_image = slicer.transform()
 print("Number of all slices ",len(transformed_image['0']))
 
@@ -212,6 +219,6 @@ while(len(transformed_image['0']) !=num_images):
     
 print("Slices to save: ",len(transformed_image['0']))
 
-slicer.save_images(transformed_image,SAVE_DIR,save_as_pickle=False) #Provide the directory where you want to save the sliced images
+slicer.save_images(transformed_image,SAVE_DIR,save_as_pickle=SAVE_AS_PICKLE) #Provide the directory where you want to save the sliced images
 
 print("** DONE! **")
