@@ -10,7 +10,7 @@ def is_image_file(filename):
     return any(filename.endswith(extension) for extension in [".nii.gz",'png','tiff','jpg',"bmp"])
 
 def open_target_get_class(target):
-        target = np.array(PIL.Image.open(target))
+        target = np.array(Image.open(target))
         target[target < 254] = 1
         target[target > 253] = 0
         # target= not target

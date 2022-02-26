@@ -47,7 +47,7 @@ from argumentparser import args
 
 import datetime
 
-from utils import open_target_get_class 
+from utils import open_image_np, open_target_get_class 
 
 def open_pickled_file(fn):
   with open(fn, "rb") as f_in:
@@ -148,7 +148,12 @@ class GeoFolders(torchvision.datasets.ImageFolder):
 import torch.utils.data as data
 
 class GeoFolders_2(data.Dataset):
-    def get_match(self,i): return [[x,i,i] for x in list(self.raw_dir.glob('*_Area_*'))if str(i.stem.split('_')[1]) in x.stem if i.stem.split("_")[3] in x.stem.split("_")[2] ][0] # long ikr!
+    def get_match(self,i): 
+        
+        return [[x,i,i] for x in list(self.raw_dir.glob('*_Area_*'))if str(i.stem.split('_')[1]) in x.stem if i.stem.split("_")[3] in x.stem.split("_")[2] ][0] # long ikr!
+
+
+    
     def __init__(self,root,transform,raw_dir,balance=True,k_labels_path=None):
         self.transform = transform
         self.raw_dir = raw_dir 
@@ -159,28 +164,39 @@ class GeoFolders_2(data.Dataset):
         
         self.samples = []
         for i in list_regions:
-            print(i.stem.split('_')[1])
+            # print(i.stem.split('_')[1])
             self.samples.append(self.get_match(i))
-        
-        print("Current smaple count ", len(self.samples * 1936))
+
+        # pre-processing moved to init
+        print("preprocessing paths ...")
+        self.raw_paths = [sorted(list((raw_path[0]  /  "0").glob("*.pickle"))) for raw_path in self.samples]
+        self.slice_paths = [sorted(list((slice_path[1]  /  "0").glob("*.png"))) for slice_path in self.samples]
+
+        del self.samples
+        print("Current smaple count ", len(self.raw_paths)* 1936)
     def __len__(self):
-        return 1936 * len(self.samples) 
+        return 1936 * len(self.raw_paths) 
     def __getitem__(self, index: int):
+        # which bin/region
         where = math.ceil(index / 1936) - 1 
+        # which patch in that region 
         which = abs(((where) * 1936) - index ) - 1
+        # maximum of each bin is 1936
         assert which <=1936
         # print(index,where,which)
-        raw_path, slice,target = self.samples[where]
-        raw_path = sorted(list((raw_path  /  "0").glob("*.pickle")))[which]
-        slice= sorted(list((slice/  "0").glob("*.png")))[which]
-        target= sorted(list((target/  "0").glob("*.png")))[which]
+
+        #get string paths - takes long - we search in each dir on each index lookup - very slow  
+        # raw_path, slice,target = self.samples[where]
+        raw_path = self.raw_paths[where][which]
+        slice = self.slice_paths[where][which]
+        target= slice
         target = str(target).replace("/64/","/64/anno/")
         
 
 
 
         #return actula color tile fro testing 
-        color_path = np.array(PIL.Image.open(slice))
+        color_path = open_image_np(slice)
         target= open_target_get_class(target)
         input  = open_pickled_file(raw_path)
         # handle exceptions
