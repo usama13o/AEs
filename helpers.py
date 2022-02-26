@@ -339,8 +339,9 @@ class GenerateTestCallback(pl.Callback):
 
 class K_means_callback(pl.Callback):
     
-    def __init__(self, input_imgs, every_n_epochs=1):
+    def __init__(self, input_imgs, every_n_epochs=1,save_k_labels=False):
         super().__init__()
+        self.save_k = save_k_labels
         self.input_imgs = torch.stack([x[0] for x in input_imgs],dim=0)# Images to reconstruct during training
         self.targets = [x[1] for x in input_imgs]
         self.target_imgs = [x[2] for x in input_imgs]
@@ -386,8 +387,9 @@ class K_means_callback(pl.Callback):
             plt.scatter(embeds[:,0], embeds[:,1], c=cluster.labels_, cmap='rainbow')
             plt.savefig('test_fig.png')
             plt.close()
-            with open("k_labels_.pickle", "wb") as f_out:
-	            pickle.dump(cluster.labels_, f_out)
+            if self.save_k:
+                with open("k_labels_.pickle", "wb") as f_out:
+                    pickle.dump(cluster.labels_, f_out)
             # Plot and add to tensorboard
             fig = create_stitched_image(np.array(self.target_imgs),cluster.labels_)
             trainer.logger.experiment.add_embedding(embeds,  # Encodings per image

@@ -8,23 +8,44 @@ Original file is located at
 """
 
 import pickle
+import PIL.Image
 import tifffile
 import numpy as np
 
-SAVE_AS_PICKLE = True
-IMG_TO_SLICE = "/home/uz1/data/geo/9-Bands_Composite_Tiff (1).tif"
+import argparse
+
+# for i in *.tif; do python /home/uz1/projects/AEs/image_patching.py --img $i --save_pkl; done
+# for i in *.jpg; do python /home/uz1/projects/AEs/image_patching.py --img "$i" --save_dir /home/uz1/data/geo/slices/64 ; done
+# 38k patches from 20 tifs
+
+parser = argparse.ArgumentParser(description='Image patching for Geology data')
+parser.add_argument('--img', help="Img to slice")
+parser.add_argument('--save_dir', help="Img to slice")
+parser.add_argument('--save_pkl', help="save as pickle files",action="store_true")
+args= parser.parse_args()
+
+SAVE_AS_PICKLE = True if args.save_pkl ==True else False
+print(f"Save as Pickle --> {SAVE_AS_PICKLE}")
+IMG_TO_SLICE = args.img if hasattr(args,'img') else "/home/uz1/data/geo/9-Bands_Composite_Tiff (1).tif" 
+
+print(f"Image to slice is : {IMG_TO_SLICE}")
 if '.tif' in IMG_TO_SLICE:
     image= tifffile.imread(IMG_TO_SLICE).transpose(1,2,0)
-else:
+elif '.pkl' in IMG_TO_SLICE:
     with open(IMG_TO_SLICE, "rb") as f_in:
         image = pickle.load(f_in)
+else:
+    image = np.array(PIL.Image.open(IMG_TO_SLICE))
 print(image.shape)
 
 
 img = image.shape
 stride = (10,10)
 output_size=(64,64)
-SAVE_DIR = f"/home/uz1/data/geo/slices_raw/" + str(output_size[0])+ '/geo_raw_unclipped'
+fn = IMG_TO_SLICE.split('/')[-1][:-4]
+#where to save ?
+SAVE_DIR = f"/home/uz1/data/geo/slices_raw/" + str(output_size[0])+ f'/{fn}_raw_unclipped' if args.save_dir == '' else args.save_dir + f"/{fn}"
+print(f"saveing to : {SAVE_DIR}")
 
 y=img[1]
 x=img[0]

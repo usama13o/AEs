@@ -156,7 +156,7 @@ resume=True
 kfold=True
 if args.geo=='2':
     DATASET_PATH ="/home/uz1/data/geo/slices/64/geo2_org"
-    DATASET_PATH ="/home/uz1/data/geo/slices/geo2_slices_pil/geo2/64"
+    # DATASET_PATH ="/home/uz1/data/geo/slices/geo2_slices_pil/geo2/64"
 else:
     DATASET_PATH ="/home/uz1/data/geo/slices/64/geo_org"
 # DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
@@ -173,8 +173,8 @@ from torchvision.datasets import ImageFolder
 if args.geo=='2':
     train_dataset = GeoFolders(
     root=DATASET_PATH,  transform=transform,raw_dir="/home/uz1/data/geo/slices/64/geo2_raw_unclipped/0/")
-    train_dataset = GeoFolders(
-    root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/')
+    # train_dataset = GeoFolders(
+    # root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/')
 else:
     train_dataset= GeoFolders(
     root='/home/uz1/data/geo/slices/64/geo_org/',  transform=transform,raw_dir='/home/uz1/data/geo/slices/64/geo_raw_unclipped/0/')
@@ -193,13 +193,13 @@ def get_train_images(num):
 
 
 trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_TEST.ckpt"),
-                        gpus=[0] if str(device).startswith("cuda") else 0,
+                        gpus=[1] if str(device).startswith("cuda") else 0,
                         max_epochs=1,
                         limit_train_batches=0,
                         limit_val_batches=0,
                         callbacks=[
-                                # GenerateTestCallback(
-                                    # get_train_images(len(train_dataset)), every_n_epochs=1),
+                                GenerateTestCallback(
+                                    get_train_images(len(train_dataset)), every_n_epochs=1),
                                 K_means_callback(
                                     get_train_images(len(train_dataset)), every_n_epochs=1),
                                 HookBasedFeatureExractorCallback()

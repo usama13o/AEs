@@ -10,7 +10,7 @@ from sklearn.metrics import f1_score
 
 class deeplab(pl.LightningModule):
 
-        def __init__(self, num_classes, small=True, pretrained=True,proj_output_dim=None,pred_hidden_dim =None, **kwargs):
+        def __init__(self, num_classes, small=True, pretrained=True,proj_output_dim=None,pred_hidden_dim =None,num_predicted_clases=2, **kwargs):
                 # self.num_classes= num_classes
                 super().__init__()
                 block = Atrous_Bottleneck
@@ -56,7 +56,7 @@ class deeplab(pl.LightningModule):
                 nn.Linear(proj_output_dim, pred_hidden_dim),
                 nn.BatchNorm1d(pred_hidden_dim),
                 nn.ReLU(),
-                nn.Linear(pred_hidden_dim, 2),
+                nn.Linear(pred_hidden_dim, num_predicted_clases),
                 )
         def forward(self, x):
                 x, conv2 = self.resnet_features(x)
@@ -94,7 +94,7 @@ class deeplab(pl.LightningModule):
                 x,y,color= batch
                 # x = x.unsqueeze(1)
                 x_hat,class_feat,class_logits = self.forward(x)
-                class_loss = F.cross_entropy(self.apply_argmax_softmax(class_logits),y,weight=torch.tensor([0.6,1.5]).to(self.device))
+                class_loss = F.cross_entropy(self.apply_argmax_softmax(class_logits),y)
                 nn_loss = self.nn_loss(class_feat,y)
                 pred = self.apply_argmax_softmax(class_logits).argmax(1)
                 f1 = f1_score(y.cpu(),pred.cpu(),average='macro')

@@ -1,3 +1,4 @@
+import math
 import torch
 from random import sample
 import PIL
@@ -44,7 +45,9 @@ from torchsampler import ImbalancedDatasetSampler
 
 from argumentparser import args
 
-import datetime 
+import datetime
+
+from utils import open_target_get_class 
 
 def open_pickled_file(fn):
   with open(fn, "rb") as f_in:
@@ -142,6 +145,58 @@ class GeoFolders(torchvision.datasets.ImageFolder):
 
 
 
+import torch.utils.data as data
+
+class GeoFolders_2(data.Dataset):
+    def get_match(self,i): return [[x,i,i] for x in list(self.raw_dir.glob('*_Area_*'))if str(i.stem.split('_')[1]) in x.stem if i.stem.split("_")[3] in x.stem.split("_")[2] ][0] # long ikr!
+    def __init__(self,root,transform,raw_dir,balance=True,k_labels_path=None):
+        self.transform = transform
+        self.raw_dir = raw_dir 
+        self.raw_dir = Path(self.raw_dir)
+        super(GeoFolders_2,self).__init__()
+        self.k_labels_path = k_labels_path if k_labels_path is not None else None 
+        list_regions = list(Path(root).glob("*_Area_*"))
+        
+        self.samples = []
+        for i in list_regions:
+            print(i.stem.split('_')[1])
+            self.samples.append(self.get_match(i))
+        
+        print("Current smaple count ", len(self.samples * 1936))
+    def __len__(self):
+        return 1936 * len(self.samples) 
+    def __getitem__(self, index: int):
+        where = math.ceil(index / 1936) - 1 
+        which = abs(((where) * 1936) - index ) - 1
+        assert which <=1936
+        # print(index,where,which)
+        raw_path, slice,target = self.samples[where]
+        raw_path = sorted(list((raw_path  /  "0").glob("*.pickle")))[which]
+        slice= sorted(list((slice/  "0").glob("*.png")))[which]
+        target= sorted(list((target/  "0").glob("*.png")))[which]
+        target = str(target).replace("/64/","/64/anno/")
+        
+
+
+
+        #return actula color tile fro testing 
+        color_path = np.array(PIL.Image.open(slice))
+        target= open_target_get_class(target)
+        input  = open_pickled_file(raw_path)
+        # handle exceptions
+        # check_exceptions(input, target)
+        if self.transform:
+            input = self.transform(input)
+            # color_path=self.transform(color_path)
+
+       
+        return input,target,color_path
+    def get_labels(self):
+        return [x[1] for x in self]
+
+
+
+
 
 
 # Transformations applied on each image => only make them a tensor
@@ -169,8 +224,9 @@ print("Device:", device)
 
 # make into args 
 resume=True
-kfold=True
-DATASET_PATH ="/home/uz1/data/geo/slices/geo2_slices_pil/geo2/64"
+kfold=False
+DATASET_PATH ="/home/uz1/data/geo/slices/64"
+# DATASET_PATH ="/home/uz1/data/geo/slices/geo2_slices_pil/geo2/64"
 # DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
 # Path to the folder where the pretrained models are saved
 CHECKPOINT_PATH =  "./saved_models_3dAE/"
@@ -182,9 +238,11 @@ from torchvision.datasets import ImageFolder
 # valid_dataset =glas_dataset(
     # root_dir=DATASET_PATH, split='valid', transform=transform)
 
-train_dataset = GeoFolders(
-    root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/',balance=args.balance,k_labels_path="/home/uz1/k_labels_.pickle")
-
+train_dataset = GeoFolders_2(
+    root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/',balance=args.balance,k_labels_path='home/uz1/data/geo/slices/64/anno')
+# train_dataset = GeoFolders(
+    # root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/',balance=args.balance,k_labels_path="/home/uz1/k_labels_.pickle")
+# train_dataset[100]
 # valid_dataset= GeoFolders(
     # root='/home/uz1/data/geo/slices/geo1_slices_pil/geo1/64',  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/0')
 #
@@ -203,8 +261,10 @@ splits = StratifiedShuffleSplit(10)
 
 get_labels = lambda a,i: [int(x[1]) for x in np.array(a.samples)[i]]
 for fold, (train_idx,val_idx) in enumerate(splits.split(np.arange(len(train_dataset)),list_targs)):
-    train_sampler = ImbalancedDatasetSampler(train_dataset,train_idx)
-    test_sampler = ImbalancedDatasetSampler(train_dataset,val_idx)
+    # train_sampler = ImbalancedDatasetSampler(train_dataset,train_idx)
+    train_sampler =SubsetRandomSampler(train_idx)
+    # test_sampler = ImbalancedDatasetSampler(train_dataset,val_idx)
+    test_sampler =SubsetRandomSampler(val_idx)
 
     ss=[]
     #counts class dist
@@ -227,16 +287,19 @@ for fold, (train_idx,val_idx) in enumerate(splits.split(np.arange(len(train_data
         from itertools import islice
         filtered = (x for x in train_dataset if x[1] == 1)
         filtered_ = (x for x in train_dataset if x[1] == 0)
-        b = list(islice(filtered, int(num/2)))
-        a = list(islice(filtered_, int(num/2)))
+        # filtered__ = (x for x in train_dataset if x[1] == 3)
+        b = list(islice(filtered, int(num/3)))
+        a = list(islice(filtered_, int(num/3)))
+        # v = list(islice(filtered__, int(num/3)))
         b.extend([*a])
+        # b.extend([*v])
         return b
 
 
 
     # wandb_logger = WandbLogger(name=f'{latent_dim}_',project='AutoEPI')
     trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_{fold}_{args.tag}.ckpt"),
-                            gpus=[1] if str(device).startswith("cuda") else 0,
+                            gpus=[0] if str(device).startswith("cuda") else 0,
                             max_epochs=1000,
                             callbacks=[ModelCheckpoint(save_top_k=2,monitor='class_loss_val',save_weights_only=True),
                                     GenerateCallback(
@@ -263,7 +326,7 @@ for fold, (train_idx,val_idx) in enumerate(splits.split(np.arange(len(train_data
     #         model = unet_3D.load_from_checkpoint(pretrained_filename.__str__())
     #     except:
     #         model = unet_3D(n_classes=1,in_channels=1,proj_output_dim=1024,pred_hidden_dim=512)
-    model = deeplab(num_classes=9,proj_output_dim=1024,pred_hidden_dim=512,num_ch=9)
+    model = deeplab(num_classes=9,proj_output_dim=1024,pred_hidden_dim=512,num_ch=9,num_predicted_clases=2)
     trainer.fit(model, train_loader,val_loader)
 
 
