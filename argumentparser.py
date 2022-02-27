@@ -3,6 +3,8 @@ import argparse
 parser = argparse.ArgumentParser(description='GEO Training Function')
 parser.add_argument('--tag',   help='tags passed to pytroch lightning logs' , type=str,default="")
 parser.add_argument('--geo',   help='which image to train on?' , type=str,default="2")
+parser.add_argument('--raw_dir',   help='dir of raw slices' , type=str,default="")
+parser.add_argument('--labels',   help='if labels available, path' , type=str,default="")
 parser.add_argument('--balance', dest='balance', action='store_true')
 parser.add_argument('--no-balance', dest='balance', action='store_false')
 parser.set_defaults(balance=True)

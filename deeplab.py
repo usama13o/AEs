@@ -165,7 +165,7 @@ class deeplab(pl.LightningModule):
         def training_step(self, batch, batch_idx):
                 loss,f1= self._get_reconstruction_loss(batch)
                 self.log_dict({'f1_train':f1,'recon_loss': loss[0],'class_loss':loss[1],'nn_loss':loss[2]})
-                return loss[1] + loss[0]
+                return loss[1] 
 
         def validation_step(self, batch, batch_idx):
                 # self.get_feature_maps(batch,'conv3')

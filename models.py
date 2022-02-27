@@ -166,7 +166,7 @@ class Autoencoder(pl.LightningModule):
         """
         Given a batch of images, this function returns the reconstruction loss (MSE in our case)
         """
-        x = batch  # We do not need the labels
+        x,_ = batch  # We do not need the labels
         x_hat = self.forward(x)
         loss = F.mse_loss(x, x_hat, reduction="none")
         loss = loss.sum(dim=[1, 2, 3]).mean(dim=[0])

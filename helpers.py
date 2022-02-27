@@ -245,6 +245,45 @@ def plotPerc(ax,l,hscale,perc,hshift=0,colorById=False,linewidth=1,addLabel=Fals
     else:
         color = [1-perc,1-perc,1-perc]
         ax.plot(xx,yy,linewidth=linewidth, color=color);
+class GenerateCallback_Single_images(pl.Callback):
+    
+    def __init__(self, input_imgs, every_n_epochs=1):
+        super().__init__()
+        self.input_imgs = input_imgs
+
+        self.every_n_epochs = every_n_epochs # Only save those images every N epochs (otherwise tensorboard gets quite large)
+    def plot_imgs(self,pred,n_cols=4):
+        figure = plt.figure(figsize=(12,8))
+        n_rows=int(len(pred) /n_cols)
+
+        for i in range(len(self.targets)):    
+            plt.subplot(n_rows, n_cols, i + 1)
+            plt.xlabel(f"GT: {self.targets[i]}  predicted : {pred[i]}")
+            plt.xticks([])
+            plt.yticks([])
+            plt.grid(False)
+            if self.input_imgs[i].shape[0] <= 4:
+                plt.imshow(self.input_imgs[i].permute(1,2,0), cmap=plt.cm.coolwarm)
+            else:
+                plt.imshow(self.input_imgs[i], cmap=plt.cm.coolwarm)
+        return figure
+        
+    def on_epoch_end(self, trainer, pl_module):
+        if trainer.current_epoch % self.every_n_epochs == 0:
+            # Reconstruct images
+            input_imgs = self.input_imgs.to(pl_module.device)
+            with torch.no_grad():
+                pl_module.eval()
+                reconst_imgs = pl_module(input_imgs)
+                pl_module.train()
+            # Plot and add to tensorboard
+            imgs = torch.stack([*input_imgs[1].squeeze(),*reconst_imgs[1].squeeze()],dim=0).unsqueeze(1)
+            # imgs = torch.stack([input_imgs, reconst_imgs], dim=1).flatten(0,1)
+            grid = torchvision.utils.make_grid(imgs, nrow=2, normalize=True, range=(-1,1))
+            try:
+                trainer.logger.experiment.add_image("Reconstructions", grid, global_step=trainer.global_step)
+            except:
+                trainer.logger.experiment.log({"Reconstructions": grid})
 class GenerateCallback(pl.Callback):
     
     def __init__(self, input_imgs, every_n_epochs=1):
@@ -321,7 +360,7 @@ class GenerateTestCallback(pl.Callback):
             #log prediction for classification 
             pred_logs=pred.cpu().numpy()
             pred = pred.softmax(1).argmax(1)
-            fig = create_stitched_image(np.array(self.target_imgs),pred,pred_logs)
+            fig = create_stitched_image(np.array(self.target_imgs),pred,'./stitched_model')
             
             # trainer.logger.experiment.add_figure('Predictions',fig,global_step=trainer.global_step)
             
@@ -379,7 +418,7 @@ class K_means_callback(pl.Callback):
             # trainer.logger.experiment.add_figure('Predictions',fig,global_step=trainer.global_step)
             from sklearn.cluster import AgglomerativeClustering
             embeds=embeds.cpu()
-            cluster = AgglomerativeClustering(n_clusters=4, affinity='euclidean', linkage='ward')
+            cluster = AgglomerativeClustering(n_clusters=pred_logs.shape[1], affinity='euclidean', linkage='ward')
             cluster.fit_predict(embeds)
 
             plt.figure()
@@ -391,12 +430,12 @@ class K_means_callback(pl.Callback):
                 with open("k_labels_.pickle", "wb") as f_out:
                     pickle.dump(cluster.labels_, f_out)
             # Plot and add to tensorboard
-            fig = create_stitched_image(np.array(self.target_imgs),cluster.labels_)
+            fig = create_stitched_image(np.array(self.target_imgs),cluster.labels_,'./stitched_kmeans')
             trainer.logger.experiment.add_embedding(embeds,  # Encodings per image
                      label_img=fig[:,:3,:,:], global_step=trainer.global_step,metadata=list(cluster.labels_))
 
 
-def create_stitched_image(images,labels,logs=None):
+def create_stitched_image(images,labels,logs='./'):
     print("images have the shape : ", images.shape)
     colors = [
 
@@ -435,5 +474,9 @@ def create_stitched_image(images,labels,logs=None):
     mod_images = torch.Tensor(mod_images).permute(0, 3, 1, 2)
     del images
     print('Making sprite image: ', mod_images.shape)
-    make_sprite(mod_images[:,:3,:,:], save_path='./')
+    try:
+        os.makedirs(logs)
+    except:
+        print("save dir already exists ")
+    make_sprite(mod_images[:,:3,:,:], save_path=logs)
     return mod_images[:,:,:,:]

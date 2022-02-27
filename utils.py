@@ -16,6 +16,20 @@ def open_target_get_class(target):
         # target= not target
         target = target.max()
         return target
+
+def open_target_get_class_with_perc(target,perc):
+        target = np.array(Image.open(target))
+        target[target < 254] = 1
+        target[target > 253] = 0
+        # target= not target
+        amount_of_1 = np.unique(target,return_counts=True)[1]
+        if len(amount_of_1)<2:
+            return 0
+        else:
+            if (amount_of_1[1] / target.shape[0]) > perc:
+                return 1
+            else:
+                return 0
 def open_image(filename):
     """
     Open an image (*.jpg, *.png, etc).

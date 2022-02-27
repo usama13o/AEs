@@ -48,167 +48,11 @@ from argumentparser import args
 import datetime
 
 from utils import open_image_np, open_target_get_class 
-
+from datasets import glas_dataset,GeoFolders,GeoFolders_2
 def open_pickled_file(fn):
   with open(fn, "rb") as f_in:
     arr_new = pickle.load(f_in)
   return arr_new
-
-
-class glas_dataset(data.Dataset):
-      
-
-    def __init__(self, root_dir, split, transform=None, preload_data=False,train_pct=0.8,balance=True):
-        super(glas_dataset, self).__init__()
-        img_dir= root_dir
-        print('Looking in ',root_dir)
-        # targets are a comob of two dirs 1- normal 1024 patches 2- Tum 1024
-        self.image_filenames  = sorted(glob.glob(img_dir+'/*'))
-
-        sp= len(self.image_filenames)
-        sp= int(train_pct *sp)
-        if split == 'train':
-            self.image_filenames = self.image_filenames[:sp]
-        
-        elif split == 'all':
-            self.image_filenames= self.image_filenames
-        else:
-            self.image_filenames = self.image_filenames[sp:]
-
-            # find the mask for the image
-        print(len(self.image_filenames))
-
-        # report the number of images in the dataset
-        print('Number of {0} images: {1} patches'.format(split, self.__len__()))
-
-        # data augmentation
-        self.transform = transform
-
-
-
-    def __getitem__(self, index):
-        # update the seed to avoid workers sample the same augmentation parameters
-        np.random.seed(datetime.datetime.now().second + datetime.datetime.now().microsecond)
-        input  = open_pickled_file(self.image_filenames[index])
-
-        # handle exceptions
-        # check_exceptions(input, target)
-        if self.transform:
-            input = self.transform(input)
-
-
-        return input
-
-    def __len__(self):
-        return len(self.image_filenames)
-
-
-
-class GeoFolders(torchvision.datasets.ImageFolder):
-
-    def __init__(self,root,transform,raw_dir,balance=True,k_labels_path=None):
-        self.raw_dir = raw_dir 
-        self.raw_dir = Path(self.raw_dir)
-        super(GeoFolders,self).__init__(root,transform)
-        self.k_labels_path = k_labels_path if k_labels_path is not None else None 
-        if balance:
-            self.samples = [x for x in self.samples if x[1]==1]
-            self.samples.extend(sample([x for x in self.imgs if x[1] ==0],1000))
-        else:
-            self.samples=self.imgs
-            self.samples = (sorted(self.samples,key=lambda x: int(Path(x[0]).stem)))
-        print("Current smaple count ", len(self.samples))
-    def __getitem__(self, index: int):
-
-        path, target = self.samples[index]
-        path = Path(path)
-        #search for the equaivlant tile in the raw tiles
-        path= self.raw_dir.joinpath(f'{path.stem}.pickle')
-
-        #return actula color tile fro testing 
-        color_path = np.array(PIL.Image.open(self.samples[index][0]))
-
-        input  = open_pickled_file(path)
-        k_label = open_pickled_file(self.k_labels_path)[index] if self.k_labels_path is not None else None
-        # handle exceptions
-        # check_exceptions(input, target)
-        if self.transform:
-            input = self.transform(input)
-            # color_path=self.transform(color_path)
-
-        if k_label is not None:
-            # print(str(target),"mapped to ",str(k_label)) # 0 (0,2) | 1 (1,3)
-            return input,k_label,color_path
-        return input,target,color_path
-
-
-
-
-
-import torch.utils.data as data
-
-class GeoFolders_2(data.Dataset):
-    def get_match(self,i): 
-        
-        return [[x,i,i] for x in list(self.raw_dir.glob('*_Area_*'))if str(i.stem.split('_')[1]) in x.stem if i.stem.split("_")[3] in x.stem.split("_")[2] ][0] # long ikr!
-
-
-    
-    def __init__(self,root,transform,raw_dir,balance=True,k_labels_path=None):
-        self.transform = transform
-        self.raw_dir = raw_dir 
-        self.raw_dir = Path(self.raw_dir)
-        super(GeoFolders_2,self).__init__()
-        self.k_labels_path = k_labels_path if k_labels_path is not None else None 
-        list_regions = list(Path(root).glob("*_Area_*"))
-        
-        self.samples = []
-        for i in list_regions:
-            # print(i.stem.split('_')[1])
-            self.samples.append(self.get_match(i))
-
-        # pre-processing moved to init
-        print("preprocessing paths ...")
-        self.raw_paths = [sorted(list((raw_path[0]  /  "0").glob("*.pickle"))) for raw_path in self.samples]
-        self.slice_paths = [sorted(list((slice_path[1]  /  "0").glob("*.png"))) for slice_path in self.samples]
-
-        del self.samples
-        print("Current smaple count ", len(self.raw_paths)* 1936)
-    def __len__(self):
-        return 1936 * len(self.raw_paths) 
-    def __getitem__(self, index: int):
-        # which bin/region
-        where = math.ceil(index / 1936) - 1 
-        # which patch in that region 
-        which = abs(((where) * 1936) - index ) - 1
-        # maximum of each bin is 1936
-        assert which <=1936
-        # print(index,where,which)
-
-        #get string paths - takes long - we search in each dir on each index lookup - very slow  
-        # raw_path, slice,target = self.samples[where]
-        raw_path = self.raw_paths[where][which]
-        slice = self.slice_paths[where][which]
-        target= slice
-        target = str(target).replace("/64/","/64/anno/")
-        
-
-
-
-        #return actula color tile fro testing 
-        color_path = open_image_np(slice)
-        target= open_target_get_class(target)
-        input  = open_pickled_file(raw_path)
-        # handle exceptions
-        # check_exceptions(input, target)
-        if self.transform:
-            input = self.transform(input)
-            # color_path=self.transform(color_path)
-
-       
-        return input,target,color_path
-    def get_labels(self):
-        return [x[1] for x in self]
 
 
 
@@ -240,7 +84,7 @@ print("Device:", device)
 
 # make into args 
 resume=True
-kfold=False
+kfold=True
 DATASET_PATH ="/home/uz1/data/geo/slices/64"
 # DATASET_PATH ="/home/uz1/data/geo/slices/geo2_slices_pil/geo2/64"
 # DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
@@ -255,7 +99,7 @@ from torchvision.datasets import ImageFolder
     # root_dir=DATASET_PATH, split='valid', transform=transform)
 
 train_dataset = GeoFolders_2(
-    root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/',balance=args.balance,k_labels_path='home/uz1/data/geo/slices/64/anno')
+    root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/',balance=args.balance,k_labels_path='/home/uz1/saved_labels.npy')
 # train_dataset = GeoFolders(
     # root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/',balance=args.balance,k_labels_path="/home/uz1/k_labels_.pickle")
 # train_dataset[100]
@@ -265,11 +109,16 @@ train_dataset = GeoFolders_2(
 from sklearn.model_selection import StratifiedShuffleSplit
 def try_my_operation(item): return item[1]
 if kfold:
-    print('Listing Indices for Targets . . . ')
-    executor = concurrent.futures.ProcessPoolExecutor(20)
-    futures = [executor.submit(try_my_operation, item) for item in train_dataset]
-    concurrent.futures.wait(futures)
-    list_targs = [x.result() for x in futures]
+    # if labels are already saved
+    if train_dataset.k_labels_path != None:
+        list_targs = train_dataset.get_labels()
+    else:
+        #re-calculate labels 
+        print('Listing Indices for Targets . . . ')
+        executor = concurrent.futures.ProcessPoolExecutor(20)
+        futures = [executor.submit(try_my_operation, item) for item in train_dataset]
+        concurrent.futures.wait(futures)
+        list_targs = [x.result() for x in futures]
 else:
     list_targs=np.zeros(len(train_dataset))
     
@@ -277,10 +126,10 @@ splits = StratifiedShuffleSplit(10)
 
 get_labels = lambda a,i: [int(x[1]) for x in np.array(a.samples)[i]]
 for fold, (train_idx,val_idx) in enumerate(splits.split(np.arange(len(train_dataset)),list_targs)):
-    # train_sampler = ImbalancedDatasetSampler(train_dataset,train_idx)
-    train_sampler =SubsetRandomSampler(train_idx)
-    # test_sampler = ImbalancedDatasetSampler(train_dataset,val_idx)
-    test_sampler =SubsetRandomSampler(val_idx)
+    train_sampler = ImbalancedDatasetSampler(train_dataset,train_idx)
+    # train_sampler =SubsetRandomSampler(train_idx)
+    test_sampler = ImbalancedDatasetSampler(train_dataset,val_idx)
+    # test_sampler =SubsetRandomSampler(val_idx)
 
     ss=[]
     #counts class dist
@@ -316,7 +165,7 @@ for fold, (train_idx,val_idx) in enumerate(splits.split(np.arange(len(train_data
     # wandb_logger = WandbLogger(name=f'{latent_dim}_',project='AutoEPI')
     trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_{fold}_{args.tag}.ckpt"),
                             gpus=[0] if str(device).startswith("cuda") else 0,
-                            max_epochs=1000,
+                            max_epochs=100,
                             callbacks=[ModelCheckpoint(save_top_k=2,monitor='class_loss_val',save_weights_only=True),
                                     GenerateCallback(
                                         get_train_images(12), every_n_epochs=1),
