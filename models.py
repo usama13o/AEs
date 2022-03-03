@@ -140,10 +140,13 @@ class Autoencoder(pl.LightningModule):
                  decoder_class: object = Decoder,
                  num_input_channels: int = 3,
                  width: int = 224,
-                 height: int =224):
+                 height: int =224,
+                 n_epochs=None,steps=None):
         super().__init__()
         # Saving hyperparameters of autoencoder
         self.save_hyperparameters()
+        self.n_epochs = n_epochs
+        self.steps = steps
         # Creating encoder and decoder
         # self.encoder =  SwinTransformer(num_classes=latent_dim,img_size=width,window_size=7)
         self.encoder = encoder_class(num_input_channels, base_channel_size, latent_dim,
@@ -181,7 +184,9 @@ class Autoencoder(pl.LightningModule):
                                                          factor=0.2,
                                                          patience=20,
                                                          min_lr=5e-5)
-        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_loss"}
+        scheduler = optim.lr_scheduler.OneCycleLR(optimizer ,steps_per_epoch=self.steps,max_lr=1e-3,epochs=self.n_epochs,cycle_momentum=True )
+        scheduler = {"scheduler": scheduler, "interval" : "step" } #<---???
+        return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx):
         loss = self._get_reconstruction_loss(batch)

@@ -55,6 +55,8 @@ except ModuleNotFoundError:  # Google Colab does not have PyTorch Lightning inst
 DATASET_PATH = "/home/uz1/data/tupa/patches"
 # Path to the folder where the pretrained models are saved
 CHECKPOINT_PATH = "./saved_models_AE/"
+n_epochs=40
+bs=128
 # Setting the seed
 pl.seed_everything(42)
 
@@ -95,10 +97,10 @@ valid_dataset =svs_h5_dataset(
     root_dir=DATASET_PATH, split='valid', transform=transform)
 
 # We define a set of data loaders that we can use for various purposes later.
-train_loader = data.DataLoader(train_dataset, batch_size=128,
+train_loader = data.DataLoader(train_dataset, batch_size=bs,
                                shuffle=True, drop_last=True, pin_memory=False, num_workers=8)
 val_loader = data.DataLoader(
-    valid_dataset, batch_size=128, shuffle=False, drop_last=False, num_workers=8)
+    valid_dataset, batch_size=bs, shuffle=False, drop_last=False, num_workers=8)
 
 
 def get_train_images(num):
@@ -131,12 +133,12 @@ def train_cifar(latent_dim):
     # wandb_logger = WandbLogger(name=f'{latent_dim}_',project='AutoEPI')
     trainer = pl.Trainer(default_root_dir=pretrained_filename,
                          gpus=[0,1] if str(device).startswith("cuda") else 0,
-                         max_epochs=100,
-                         callbacks=[ModelCheckpoint(save_weights_only=False),
+                         max_epochs=n_epochs,
+                         callbacks=[ModelCheckpoint(save_weights_only=True),
                                     GenerateCallback_Single_images(
                                         get_train_images(8), every_n_epochs=1),
                                     LearningRateMonitor("epoch"),
-                                    EarlyStopping(monitor="val_loss")
+                                    # EarlyStopping(monitor="val_loss",patiance =5)
                                     ],
                                     logger=wandb_logger if wandb_logger else True,
                                     plugins=DDPPlugin(find_unused_parameters=False),
@@ -153,7 +155,7 @@ def train_cifar(latent_dim):
         print("Found pretrained model, loading...")
         model = Autoencoder.load_from_checkpoint(pretrained_filename)
     else:
-        model = Autoencoder(base_channel_size=128, latent_dim=latent_dim)
+        model = Autoencoder(base_channel_size=64, latent_dim=latent_dim,steps=len(train_loader),n_epochs=n_epochs)
         trainer.fit(model, train_loader, val_loader)
     
     
@@ -166,7 +168,7 @@ def train_cifar(latent_dim):
 
 
 model_dict = {}
-for latent_dim in [1024]:
+for latent_dim in [512]:
     model_ld, result_ld = train_cifar(latent_dim)
     # model_ld.save(f'{latent_dim}_.h5')
     model_dict[latent_dim] = {"model": model_ld, "result": result_ld}

@@ -1,5 +1,8 @@
 from datetime import datetime
 import random
+
+import numpy as np
+from datasets import svs_h5_dataset
 from utils import Resize
 from models import Autoencoder
 from helpers import GenerateCallback
@@ -51,10 +54,10 @@ except ModuleNotFoundError:  # Google Colab does not have PyTorch Lightning inst
 # Path to the folder where the datasets are/should be downloaded (e.g. CIFAR10)
 # DATASET_PATH = "/mnt/data/Other/DOWNLOADS/WSIData/filtered/PNG/train/"
 # DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
-DATASET_PATH = r"/mnt/data/Other/DOWNLOADS/slices (3)/slices/0"
+DATASET_PATH = r"/home/uz1/data/tupa/patches"
 # Path to the folder where the pretrained models are saved
 CHECKPOINT_PATH = "./saved_models/"
-IMG_SIZE = 128
+IMG_SIZE =224
 
 
 global now
@@ -130,16 +133,14 @@ transform = transforms.Compose([
 pl.seed_everything(42)
 
 # Loading the test set
-train_dataset = glas_dataset(
-    root_dir=DATASET_PATH, split='all', transform=transform)
-valid_dataset = glas_dataset(
-    root_dir=DATASET_PATH, split='valid', transform=transform)
-
+# train_dataset = glas_dataset(
+#     root_dir=DATASET_PATH, split='all', transform=transform)
+# valid_dataset = glas_dataset(
+#     root_dir=DATASET_PATH, split='valid', transform=transform)
+train_dataset = svs_h5_dataset(DATASET_PATH,transform=transform)
 # We define a set of data loaders that we can use for various purposes later.
-train_loader = data.DataLoader(train_dataset, batch_size=6,
+train_loader = data.DataLoader(train_dataset, batch_size=16,
                                shuffle=False, drop_last=True, pin_memory=False, num_workers=4)
-val_loader = data.DataLoader(
-    valid_dataset, batch_size=6, shuffle=False, drop_last=False, num_workers=4)
 
 
 def get_train_images(num):
@@ -149,7 +150,8 @@ def get_train_images(num):
 # Check whether pretrained model exists. If yes, load it and skip training
 pretrained_filename = r"/mnt/data/Other/DOWNLOADS/epoch=499-step=48499.ckpt"
 pretrained_filename = r"/mnt/data/Other/DOWNLOADS/epoch=999-step=27999 (1).ckpt"
-model = Autoencoder(base_channel_size=128, latent_dim=128,
+pretrained_filename = r"/home/uz1/saved_models_AE/AE_SVS_512.ckpt/lightning_logs/version_0/checkpoints/epoch=14-step=12569.ckpt"
+model = Autoencoder(base_channel_size=64, latent_dim=512,
                     width=IMG_SIZE, height=IMG_SIZE)
 model = Autoencoder.load_from_checkpoint(pretrained_filename)
 # load_moco_checkpoint(model.encoder,pretrained_filename)
@@ -158,84 +160,62 @@ model = Autoencoder.load_from_checkpoint(pretrained_filename)
 # If you want to try a different latent dimensionality, change it here!
 
 
-def embed_imgs(model, data_loader):
+def embed_imgs(model, data_loader,lim=1000):
     # Encode all images in the data_laoder using model, and return both images and encodings
+    if lim==None:
+        lim=1000000000
 
     targ_list , img_list, embed_list = [], [],[]
     model.eval()
     max = 0
-    for imgs,targ in tqdm(data_loader, desc="Encoding images", leave=False, total=len(data_loader)):
-
+    for i in tqdm(range(len(train_dataset)), desc="Encoding images", leave=False, total=len(train_dataset)):
+        idx = random.randint(0,len(train_dataset))
+        imgs,targ = train_dataset[idx]
         targ_list.append(targ)
         max += 1
         with torch.no_grad():
             # print("Encoding image")
-            z = model.encoder(imgs.to(model.device))
+            z = model.encoder(imgs.to(model.device).unsqueeze(0))
         img_list.append(imgs)
 
         embed_list.append(z)
-        if max >= 1000:
+        if max >= lim:
             return (torch.cat(img_list, dim=0), torch.cat(embed_list, dim=0))
     return (torch.cat(img_list, dim=0), torch.cat(embed_list, dim=0),torch.cat(targ_list, dim=0))
 print('Loaded and ready to encode images !!')
+
+def embed_imgs_labels(model, data_loader,kmean):
+    # Encode all images in the data_laoder using model, and return both images and encodings
+
+    targ_list , img_list, embed_list = [], [],[]
+    model.eval()
+    for imgs,targ in tqdm(data_loader, desc="Encoding images", leave=False, total=len(data_loader)):
+
+        with torch.no_grad():
+            # print("Encoding image")
+            z = model.encoder(imgs.to(model.device))
+            y = kmean.predict(z)
+            targ_list.append(y)
+        embed_list.append(z)
+    return np.stack(targ_list,0).reshape(-1)
 if __name__ == "__main__":
     print("Encoding ..")
-    train_img_embeds = embed_imgs(model, train_loader)
+    train_img_embeds = embed_imgs(model, train_loader,6000)
     # train_img_embeds  = embed_imgs(model, val_loader)
 
 
-    def find_similar_images(query_img, query_z, key_embeds, K=8,knn=False,dist_metric='cos'):
-        # Find closest K images. We use the euclidean distance here but other like cosine distance can also be used.
-        if dist_metric== 'cos':
-            dist = torch.cosine_similarity(query_z[None, :], key_embeds[1])
-        else:
-            dist = torch.cdist(query_z[None, :], key_embeds[1],p=2)
-        dist = dist.squeeze(dim=0)
-        if knn:
-            from sklearn.neighbors import NearestNeighbors 
-            neigh = NearestNeighbors(n_neighbors=8)
-            nn = neigh.fit(key_embeds[1])
-            dist, indices = nn.kneighbors(query_z.reshape(1,-1))
-            indices = indices.reshape(-1)
-        else:
-            dist, indices = torch.sort(dist)
-        # Plot K closest images
-        imgs_to_display = torch.cat(
-            [query_img[None], key_embeds[0][indices[:K]]], dim=0)
-        grid = torchvision.utils.make_grid(
-            imgs_to_display, nrow=K+1, normalize=True, range=(-1, 1))
-        grid = grid.permute(1, 2, 0)
-        plt.figure(figsize=(12, 3))
-        plt.imshow(grid)
-        plt.axis('off')
-        plt.savefig(f'grid_{indices[1]}_{dist_metric}_knn__{str(knn)}.png')
-        # plt.show()
+    
 
 
     # Plot the closest images for the first N test images as example
-    for i in [25,  15, 16, 17, 24]:
-        find_similar_images(
-            train_img_embeds[0][i], train_img_embeds[1][i], key_embeds=train_img_embeds,knn=True,dist_metric='cdist')
+    # for i in [25,  15, 16, 17, 24]:
+    #     find_similar_images(
+    #         train_img_embeds[0][i], train_img_embeds[1][i], key_embeds=train_img_embeds,knn=True,dist_metric='cdist')
 
-    def show_closest_images(train_img_embeds,k=50):
-        from sklearn.neighbors import NearestNeighbors
-        import numpy as np
-        neigh = NearestNeighbors(n_neighbors=k)
-        nn = neigh.fit(train_img_embeds[1])
-        ind_list=[]
-        for i in range(1700,1800):
-            print(i)
-            _,ind = nn.kneighbors(train_img_embeds[1][i].reshape(1,-1))
-            ind_list.extend(*ind)
-        topk = np.unique(ind_list,return_counts=True)[0][np.argpartition(np.unique(ind_list,return_counts=True)[1], -4)[-4:]]
-        print("topk --> ",topk)
-        topk_imgs=torch.cat([train_img_embeds[0][topk]],dim=0)
-        img_g = torchvision.utils.make_grid(topk_imgs,nrow=4,normalize=True,range=(-1,1)).permute(1,2,0)
-        plt.figure(figsize=(12, 3))
-        plt.imshow(img_g)
-        plt.axis('off')
 
-    show_closest_images(train_img_embeds)
+
+    # show_closest_images(train_img_embeds)
+
     # Create a summary writer
     writer = SummaryWriter(CHECKPOINT_PATH)
 
@@ -247,10 +227,55 @@ if __name__ == "__main__":
     if cluster:
 
         from sklearn.cluster import KMeans
+        from scipy.spatial.distance import cdist
 
-        kmeans = KMeans(n_clusters=4, random_state=0).fit(train_img_embeds[1])
+        #find best K 
+
+        distortions = []
+        inertias = []
+        mapping1 = {}
+        mapping2 = {}
+        K = range(1, 10)
+        X = train_img_embeds[1]
+        
+        for k in K:
+            # Building and fitting the model
+            kmeanModel = KMeans(n_clusters=k).fit(X)
+            kmeanModel.fit(X)
+        
+            distortions.append(sum(np.min(cdist(X, kmeanModel.cluster_centers_,
+                                                'euclidean'), axis=1)) / X.shape[0])
+            inertias.append(kmeanModel.inertia_)
+        
+            mapping1[k] = sum(np.min(cdist(X, kmeanModel.cluster_centers_,
+                                        'euclidean'), axis=1)) / X.shape[0]
+            mapping2[k] = kmeanModel.inertia_
+        
+
+
+
+        plt.plot(K, distortions, 'bx-')
+        plt.xlabel('Values of K')
+        plt.ylabel('Distortion')
+        plt.title('The Elbow Method using Distortion')
+        plt.savefig('./The Elbow Method using Distortion.png')
+
+        plt.close()
+        plt.plot(K, inertias, 'bx-')
+        plt.xlabel('Values of K')
+        plt.ylabel('Inertia')
+        plt.title('The Elbow Method using Inertia')
+        plt.savefig('./The Elbow Method using Inertia.png')
+
+
+        kmeans = KMeans(n_clusters=3, random_state=0).fit(train_img_embeds[1])
         print(len(kmeans.labels_))
+        targs = embed_imgs_labels(model,train_loader,kmeans)
+        np.save("saved_labels_svs",targs)
+        print("Size of labels is: ", targs.shape)
+        import joblib 
+        joblib.dump(kmeans,"kmeans_class.pkl")
 
-        create_stitched_image((train_img_embeds[0][:NUM_IMGS]+1), train_img_embeds[1][:NUM_IMGS],kmeans.labels_)
+        # create_stitched_image((train_img_embeds[0][:NUM_IMGS]+1), train_img_embeds[1][:NUM_IMGS],kmeans.labels_)
 
 
