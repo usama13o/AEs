@@ -5,6 +5,8 @@ import math
 from os import listdir
 from random import sample
 import numpy as np
+from sklearn.feature_selection import SelectFdr
+from torch import dtype
 import torch.utils.data as data
 from pathlib import Path
 # Standard libraries
@@ -30,16 +32,43 @@ class GeoFolders_2(data.Dataset):
 
 
     
-    def __init__(self,root,transform,raw_dir,balance=True,k_labels_path=None):
+    def __init__(self,root,transform,raw_dir,split="all",k_labels_path=None,pick=None):
+        self.list_targs=None 
+
         self.transform = transform
         self.raw_dir = raw_dir 
         self.raw_dir = Path(self.raw_dir)
         super(GeoFolders_2,self).__init__()
         self.k_labels_path = k_labels_path if k_labels_path is not None else None 
-        list_regions = list(Path(root).glob("*_Area_*"))
-        
+        self.list_regions = list(Path(root).glob("*_Area_*"))
+        #remove egypt from list
+        self.list_regions = [x for x in self.list_regions if "Egypt" not in str(x)]
+        #remove usa_3 from list
+        self.list_regions = [x for x in self.list_regions if "USA_Area_3" not in str(x)]
+        # if pick is a region name (in string formate) find region index in list
+        # find index of pick in list_regions
+
+        if type(pick) == int:
+            self.list_regions = [x for x in self.list_regions if "China" not in str(x)]# remove hcina if we arent testing on it
+
+
+        if split=='valid':
+
+
+            if isinstance(pick, str):
+                self.list_regions= [x for x in self.list_regions if pick in x.stem]
+            # print(list_regions)
+            else:
+                self.list_regions = [self.list_regions[pick]]
+            # print(list_regions)
+
+        elif split=="none":
+            pass
+        else:
+            self.list_regions.pop(pick) 
+
         self.samples = []
-        for i in list_regions:
+        for i in self.list_regions:
             # print(i.stem.split('_')[1])
             self.samples.append(self.get_match(i))
 
@@ -47,19 +76,19 @@ class GeoFolders_2(data.Dataset):
         print("preprocessing paths ...")
         self.raw_paths = [sorted(list((raw_path[0]  /  "0").glob("*.pickle"))) for raw_path in self.samples]
         self.slice_paths = [sorted(list((slice_path[1]  /  "0").glob("*.png"))) for slice_path in self.samples]
-
+        self.num_slices = len(self.raw_paths[0])
         del self.samples
-        print("Current smaple count ", len(self.raw_paths)* 1936)
+        print("Current smaple count ", len(self.raw_paths)* self.num_slices)
     def __len__(self):
-        return 1936 * len(self.raw_paths)  + 1
+        return len(self.raw_paths[0]) * len(self.raw_paths)   + 1
 
     def __getitem__(self, index: int):
         # which bin/region
-        where = math.ceil(index / 1936) - 1 
+        where = math.ceil(index / self.num_slices) - 1 
         # which patch in that region 
-        which = abs(((where) * 1936) - index ) - 1
+        which = abs(((where) * self.num_slices) - index ) - 1
         # maximum of each bin is 1936
-        assert which <=1936
+        assert which <= self.num_slices
         # print(index,where,which)
 
         #get string paths - takes long - we search in each dir on each index lookup - very slow  
@@ -67,14 +96,14 @@ class GeoFolders_2(data.Dataset):
         raw_path = self.raw_paths[where][which]
         slice = self.slice_paths[where][which]
         target= slice
-        target = str(target).replace("/64/","/64/anno/")
+        target = str(target).replace("/64/","/64/anno/") if "test" not in str(target) else str(target).replace("/test/","/64/anno/test/")
         
 
 
 
         #return actula color tile fro testing 
         color_path = open_image_np(slice)
-        target= open_target_get_class_with_perc(target,0.5)
+        target= open_target_get_class_with_perc(target,0.12)
         input  = open_pickled_file(raw_path)
         # handle exceptions
         # check_exceptions(input, target)
@@ -85,8 +114,11 @@ class GeoFolders_2(data.Dataset):
        
         return input,target,color_path
     def get_labels(self):
-        
-        return np.load(self.k_labels_path)
+        #load pickle file with labels if k_labels_path is not None
+        if self.k_labels_path is not None:
+            return open_pickled_file(self.k_labels_path)
+        else:
+            return self.list_regions
 
 class glas_dataset(data.Dataset):
       

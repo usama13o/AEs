@@ -28,7 +28,7 @@ def open_target_get_class_with_perc(target,perc):
         if len(amount_of_1)<2:
             return 0
         else:
-            if (amount_of_1[1] / target.shape[0]) > perc:
+            if (amount_of_1[1] / (target.shape[0] * target.shape[1]* target.shape[2]) ) > perc:
                 return 1
             else:
                 return 0
@@ -142,19 +142,19 @@ def check_exceptions(image, label=None):
 
 
 class Resize:
-    def __init__(self, size):
+    def __init__(self, size,pil=False):
         assert isinstance(size, int) or (isinstance(size, Iterable) and len(size) == 2)
         if isinstance(size, int):
             self._size = (size, size)
         else:
             self._size = size
         
-        self.toPil = tt.ToPILImage()
+        self.toPil = tt.ToPILImage() if pil else None
         self.resize = tt.Resize(self._size)
 
     def __call__(self,x,y=None):
         
-        _input=self.toPil(x)
+        _input=self.toPil(x) if self.toPil is not None else x
         if x.ndim < 3:
            _input=  _input.convert("L")
         _input = self.resize(_input)

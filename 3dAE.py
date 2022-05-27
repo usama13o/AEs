@@ -89,7 +89,7 @@ DATASET_PATH ="/home/uz1/data/geo/slices/64"
 # DATASET_PATH ="/home/uz1/data/geo/slices/geo2_slices_pil/geo2/64"
 # DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
 # Path to the folder where the pretrained models are saved
-CHECKPOINT_PATH =  "./saved_models_3dAE/"
+CHECKPOINT_PATH =  "./saved_models_3dAE_NEW_DATA/"
 # Setting the seed
 # Loading the test set
 from torchvision.datasets import ImageFolder
@@ -97,101 +97,118 @@ from torchvision.datasets import ImageFolder
 #     root_dir=DATASET_PATH, split='train', transform=transform)
 # valid_dataset =glas_dataset(
     # root_dir=DATASET_PATH, split='valid', transform=transform)
+for p in [19]: #list(range(19)):
+    # p=15,7
+    print(f"Pickling {p} . . .")
+    train_dataset = GeoFolders_2(
+        root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/',split='none',pick=p,k_labels_path=f'./k_labels_{p}.pickle')
+    valid_dataset = GeoFolders_2(
+        root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/',split="valid",pick="China_Area_2")
 
-train_dataset = GeoFolders_2(
-    root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/',balance=args.balance,k_labels_path='/home/uz1/saved_labels.npy')
-# train_dataset = GeoFolders(
-    # root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/',balance=args.balance,k_labels_path="/home/uz1/k_labels_.pickle")
-# train_dataset[100]
-# valid_dataset= GeoFolders(
-    # root='/home/uz1/data/geo/slices/geo1_slices_pil/geo1/64',  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/0')
-#
-from sklearn.model_selection import StratifiedShuffleSplit
-def try_my_operation(item): return item[1]
-if kfold:
-    # if labels are already saved
-    if train_dataset.k_labels_path != None:
-        list_targs = train_dataset.get_labels()
+    print(f"Training on {len(train_dataset.list_regions)}: {train_dataset.list_regions}")
+    print(f"\n  Validation on {len(valid_dataset.list_regions)}: {valid_dataset.list_regions}")
+
+    # train_dataset = GeoFolders(
+        # root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/',balance=args.balance,k_labels_path="/home/uz1/k_labels_.pickle")
+    # train_dataset[100]
+    # valid_dataset= GeoFolders(
+        # root='/home/uz1/data/geo/slices/geo1_slices_pil/geo1/64',  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/0')
+    #
+    from sklearn.model_selection import StratifiedShuffleSplit
+    def try_my_operation(item): return item[1]
+    if kfold:
+        # if labels file exists, load it
+        if os.path.exists(f"./k_labels_{p}.pickle"):
+            print("Loading labels file")
+            list_targs = train_dataset.get_labels()[:len(train_dataset)]
+        else:
+            #re-calculate labels 
+            print('Listing Indices for Targets . . . ')
+            executor = concurrent.futures.ProcessPoolExecutor(20)
+            futures = [executor.submit(try_my_operation, item) for item in train_dataset]
+            concurrent.futures.wait(futures)
+            list_targs = [x.result() for x in futures][:len(train_dataset)]
+            train_dataset.list_targs=list_targs
+            #save labels
+            train_dataset.k_labels_path = f"./k_labels_{p}.pickle"
+            with open(train_dataset.k_labels_path, 'wb') as f:
+                pickle.dump(list_targs, f)
+            print('Saved labels to file . . . ')
     else:
-        #re-calculate labels 
-        print('Listing Indices for Targets . . . ')
-        executor = concurrent.futures.ProcessPoolExecutor(20)
-        futures = [executor.submit(try_my_operation, item) for item in train_dataset]
-        concurrent.futures.wait(futures)
-        list_targs = [x.result() for x in futures]
-else:
-    list_targs=np.zeros(len(train_dataset))
-    
-splits = StratifiedShuffleSplit(10)
-
-get_labels = lambda a,i: [int(x[1]) for x in np.array(a.samples)[i]]
-for fold, (train_idx,val_idx) in enumerate(splits.split(np.arange(len(train_dataset)),list_targs)):
-    train_sampler = ImbalancedDatasetSampler(train_dataset,train_idx)
-    # train_sampler =SubsetRandomSampler(train_idx)
-    test_sampler = ImbalancedDatasetSampler(train_dataset,val_idx)
-    # test_sampler =SubsetRandomSampler(val_idx)
-
-    ss=[]
-    #counts class dist
-    for idx,val in enumerate(list(train_sampler)):
-        ss.append(list_targs[val])
-    
-
-    print(f"** No. of train samples for fold({fold}) is {len(train_idx)} - 0/1 = {str(np.unique(ss,return_counts=True)[1])}")
-    print(f"** No. of validation samples for fold({fold}) is {len(val_idx)}")
+        list_targs=np.zeros(len(train_dataset))
+        train_dataset.list_targs=list_targs
         
-    #  We define a set of data loaders that we can use for various purposes later.
-    train_loader = data.DataLoader(train_dataset, batch_size=128,
-                                shuffle=False, drop_last=True, pin_memory=False, num_workers=8,sampler=train_sampler if train_sampler else None)
-    val_loader = data.DataLoader(
-        train_dataset, batch_size=128, shuffle=False, drop_last=False, num_workers=8,sampler = test_sampler if test_sampler else None )
+    splits = StratifiedShuffleSplit(2)
+
+    get_labels = lambda a,i: [int(x[1]) for x in np.array(a.samples)[i]]
+    for fold, (train_idx,val_idx) in enumerate(splits.split(np.arange(len(train_dataset)),list_targs)):
+        train_sampler = ImbalancedDatasetSampler(train_dataset,train_idx)
+        # train_sampler =SubsetRandomSampler(train_idx)
+        test_sampler = ImbalancedDatasetSampler(train_dataset,val_idx)
+        # test_sampler =SubsetRandomSampler(val_idx)
+
+        ss=[]
+        #counts class dist
+        for idx,val in enumerate(list(train_sampler)):
+            ss.append(list_targs[val])
+        
+
+        print(f"** No. of train samples for fold({fold}) is {len(train_idx)} - 0/1 = {str(np.unique(ss,return_counts=True)[1])}")
+        print(f"** No. of validation samples for fold({fold}) is {len(val_idx)}")
+            
+        #  We define a set of data loaders that we can use for various purposes later.
+        train_loader = data.DataLoader(train_dataset, batch_size=128,
+                                    shuffle=False, drop_last=True, pin_memory=False, num_workers=8,sampler=train_sampler if train_sampler else None)
+        val_loader = data.DataLoader(
+            valid_dataset, batch_size=128, shuffle=False, drop_last=False, num_workers=8,sampler = None )
 
 
 
-    def get_train_images(num):
-        from itertools import islice
-        filtered = (x for x in train_dataset if x[1] == 1)
-        filtered_ = (x for x in train_dataset if x[1] == 0)
-        # filtered__ = (x for x in train_dataset if x[1] == 3)
-        b = list(islice(filtered, int(num/3)))
-        a = list(islice(filtered_, int(num/3)))
-        # v = list(islice(filtered__, int(num/3)))
-        b.extend([*a])
-        # b.extend([*v])
-        return b
+        def get_train_images(num):
+            from itertools import islice
+            filtered = (x for x in valid_dataset if x[1] == 1)
+            filtered_ = (x for x in valid_dataset if x[1] == 0)
+            # filtered__ = (x for x in train_dataset if x[1] == 3)
+            b = list(islice(filtered, int(num/3)))
+            a = list(islice(filtered_, int(num/3)))
+            # v = list(islice(filtered__, int(num/3)))
+            b.extend([*a])
+            # b.extend([*v])
+            return b
 
 
 
-    # wandb_logger = WandbLogger(name=f'{latent_dim}_',project='AutoEPI')
-    trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_{fold}_{args.tag}.ckpt"),
-                            gpus=[0] if str(device).startswith("cuda") else 0,
-                            max_epochs=100,
-                            callbacks=[ModelCheckpoint(save_top_k=2,monitor='class_loss_val',save_weights_only=True),
-                                    GenerateCallback(
-                                        get_train_images(12), every_n_epochs=1),
-                                    LearningRateMonitor("epoch"),
-                                    EarlyStopping(monitor="class_loss_val",patience=50,verbose=True),
-                                    # HookBasedFeatureExractorCallback()
-                                    ],
-                            log_every_n_steps=1        
-                                    )
-    # If True, we plot the computation graph in tensorboard
-    trainer.logger._log_graph = True
-    # Optional logging argument that we don't need
-    trainer.logger._default_hp_metric = None
+        # wandb_logger = WandbLogger(name=f'{latent_dim}_',project='AutoEPI')
+        trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_{fold}__{p}.ckpt"),
+                                gpus=[0] if str(device).startswith("cuda") else 0,
+                                max_epochs=500,
+                                callbacks=[ModelCheckpoint(save_top_k=1,monitor='class_loss_val',save_weights_only=True,save_last=True),
+                                        GenerateCallback(
+                                            get_train_images(12), every_n_epochs=1),
+                                        LearningRateMonitor("epoch"),
+                                        # EarlyStopping(monitor="class_loss_val",patience=50,verbose=True),
+                                        # HookBasedFeatureExractorCallback()
+                                        ],
+                                log_every_n_steps=1        
+                                        )
+        # If True, we plot the computation graph in tensorboard
+        trainer.logger._log_graph = True
+        # Optional logging argument that we don't need
+        trainer.logger._default_hp_metric = None
 
 
 
-    # pretrained_filename = next(Path('/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/').joinpath(f"version_{len(list(Path('/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/').glob('version_*')))-1}/checkpoints/").glob('*'))
-    # # Check whether pretrained model exists. If yes, load it and skip training
-    # if os.path.isfile(pretrained_filename) and resume ==True:
-    #     print("Found pretrained model, loading...")
-    #     try:
-    #         # assert 1==0
-    #         model = unet_3D.load_from_checkpoint(pretrained_filename.__str__())
-    #     except:
-    #         model = unet_3D(n_classes=1,in_channels=1,proj_output_dim=1024,pred_hidden_dim=512)
-    model = deeplab(num_classes=9,proj_output_dim=1024,pred_hidden_dim=512,num_ch=9,num_predicted_clases=2)
-    trainer.fit(model, train_loader,val_loader)
+        # pretrained_filename = next(Path('/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/').joinpath(f"version_{len(list(Path('/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/').glob('version_*')))-1}/checkpoints/").glob('*'))
+        # # Check whether pretrained model exists. If yes, load it and skip training
+        # if os.path.isfile(pretrained_filename) and resume ==True:
+        #     print("Found pretrained model, loading...")
+        #     try:
+        #         # assert 1==0
+        #         model = unet_3D.load_from_checkpoint(pretrained_filename.__str__())
+        #     except:
+        #         model = unet_3D(n_classes=1,in_channels=1,proj_output_dim=1024,pred_hidden_dim=512)
+        model = deeplab(num_classes=9,proj_output_dim=1024,pred_hidden_dim=512,num_ch=9,num_predicted_clases=2)
+        trainer.fit(model, train_loader,val_loader)
+        del trainer
 
 

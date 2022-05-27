@@ -1,9 +1,8 @@
+from sqlite3 import DatabaseError
 import torch
 import PIL
-from torch import nn
 from torch.autograd import Variable
 import os
-import tiffile
 import numpy as np
 import torch
 from torch import nn
@@ -15,7 +14,6 @@ import torch.utils.data as data
 import pickle
 import glob
 import pytorch_lightning as pl
-import concurrent
 from pathlib import Path
 # Standard libraries
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
@@ -51,7 +49,7 @@ def open_pickled_file(fn):
 
 
 class glas_dataset(data.Dataset):
-      
+    
 
     def __init__(self, root_dir, split, transform=None, preload_data=False,train_pct=0.8,balance=True):
         super(glas_dataset, self).__init__()
@@ -100,10 +98,13 @@ class glas_dataset(data.Dataset):
 
 
 class GeoFolders(torchvision.datasets.ImageFolder):
+    def get_match(self,i): 
+        i = Path(i)
+        return [[x,i] for x in list(self.raw_dir.glob('*_Area_*'))if str(i.stem.split('_')[1]) in x.stem if i.stem.split("_")[3] in x.stem.split("_")[2] ][0] # long ikr!
 
-    def __init__(self,root,transform,raw_dir,target_transform=None):
-        self.raw_dir = raw_dir 
-        self.raw_dir = Path(self.raw_dir)
+    def __init__(self,root,transform,raw_dir,all=None):
+        self.raw_dir = Path(raw_dir) if raw_dir is not None else Path("/home/uz1/data/geo/slices_raw/test/")
+        self.raw_dir = self.get_match(root)[0].joinpath('0/')
         super(GeoFolders,self).__init__(root,transform)
         self.samples = (sorted(self.samples,key=lambda x: int(Path(x[0]).stem)))
         print("Current smaple count ", len(self.samples))
@@ -154,11 +155,15 @@ print("Device:", device)
 # make into args 
 resume=True
 kfold=True
+runs=1
 if args.geo=='2':
     DATASET_PATH ="/home/uz1/data/geo/slices/64/geo2_org"
     # DATASET_PATH ="/home/uz1/data/geo/slices/geo2_slices_pil/geo2/64"
 elif args.geo =='1':
     DATASET_PATH ="/home/uz1/data/geo/slices/64/geo_org"
+elif args.geo =='all':
+    DATASET_PATH = list(Path("/home/uz1/data/geo/slices/test/").glob('*'))
+    runs=20
 else:
     DATASET_PATH = args.geo
 # Path to the folder where the pretrained models are saved
@@ -179,66 +184,71 @@ if args.geo=='2':
 elif args.geo =='1':
     train_dataset= GeoFolders(
     root='/home/uz1/data/geo/slices/64/geo_org/',  transform=transform,raw_dir='/home/uz1/data/geo/slices/64/geo_raw_unclipped/0/')
-else:
-    train_dataset = GeoFolders_2(root=DATASET_PATH,transform=transform,raw_dir=args.raw_dir,k_labels_path=args.labels)
+elif args.geo != 'all':
+    train_dataset = GeoFolders(root=DATASET_PATH,transform=transform,raw_dir=None ,all=True if args.geo=='all' else False)#,k_labels_path=args.labels)
 
+root=''
 from sklearn.model_selection import StratifiedShuffleSplit
+for path in range(runs):
+    if args.geo=='all':
+        root=DATASET_PATH[path]
+        train_dataset = GeoFolders(root=root,transform=transform,raw_dir=None,all=True)
 
-train_loader = data.DataLoader(train_dataset, batch_size=300,
-                            shuffle=False, drop_last=False, pin_memory=False, num_workers=8)
-
-
-
-def get_train_images(num):
-    b = [train_dataset[x] for x in range(num)]
-    return b
+    train_loader = data.DataLoader(train_dataset, batch_size=300,
+                                shuffle=False, drop_last=False, pin_memory=False, num_workers=8)
 
 
 
-trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_TEST.ckpt"),
-                        gpus=[1] if str(device).startswith("cuda") else 0,
-                        max_epochs=1,
-                        limit_train_batches=0,
-                        limit_val_batches=0,
-                        callbacks=[
-                                GenerateTestCallback(
-                                    get_train_images(len(train_dataset)), every_n_epochs=1),
-                                K_means_callback(
-                                    get_train_images(len(train_dataset)), every_n_epochs=1),
-                                # HookBasedFeatureExractorCallback()
-                                ],
-                        log_every_n_steps=1        
-                                )
-# If True, we plot the computation graph in tensorboard
-trainer.logger._log_graph = True
-# Optional logging argument that we don't need
-trainer.logger._default_hp_metric = None
+    def get_train_images(num):
+        b = [train_dataset[x] for x in range(num)]
+        return b
 
 
-# Check whether pretrained model exists. If yes, load it and skip training
-try:
-    pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/version_13/checkpoints/epoch=25-step=207.ckpt"
-    pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/version_17/checkpoints/epoch=18-step=151.ckpt"
-    pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/version_16_FULL_CLASS/checkpoints/epoch=63-step=511.ckpt"
-    pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/version_22/checkpoints/epoch=977-step=6845.ckpt"
-    pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_1.ckpt/lightning_logs/version_14/checkpoints/epoch=823-step=5767.ckpt"
-    pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0_.ckpt/lightning_logs/version_1/checkpoints/epoch=106-step=8452.ckpt"
-    if args.pretrained:
-        pretrained_filename = args.pretrained
-except:
-    pretrained_filename = False
-    resume=False
-if os.path.isfile(pretrained_filename) and resume ==True: 
-    print("Found pretrained model, loading...")
-    # model = unet_3D.load_from_checkpoint(pretrained_filename)
-    model =deeplab.load_from_checkpoint(pretrained_filename)
-    # model = deeplab(num_classes=9,proj_output_dim=1024,pred_hidden_dim=512,num_ch=9)
-# else:
-    # model = unet_3D(n_classes=1,in_channels=1,proj_output_dim=1024,pred_hidden_dim=512)
-    
 
-print("Running model from file:  ",pretrained_filename)
-trainer.fit(model, train_loader)
-trainer.test(model,train_loader)
+    trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_TEST.ckpt"),
+                            gpus=[1] if str(device).startswith("cuda") else None  ,
+                            max_epochs=1,
+                            limit_train_batches=0,
+                            limit_val_batches=0,
+                            callbacks=[
+                                    GenerateTestCallback(
+                                        get_train_images(len(train_dataset)), every_n_epochs=1,logs=args.pretrained+'_'+str(root) if args.pretrained != '' else  None),
+                                    K_means_callback(
+                                        get_train_images(len(train_dataset)), every_n_epochs=1),
+                                    # HookBasedFeatureExractorCallback()
+                                    ],
+                            log_every_n_steps=1        
+                                    )
+    # If True, we plot the computation graph in tensorboard
+    trainer.logger._log_graph = True
+    # Optional logging argument that we don't need
+    trainer.logger._default_hp_metric = None
+
+
+    # Check whether pretrained model exists. If yes, load it and skip training
+    try:
+        pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/version_13/checkpoints/epoch=25-step=207.ckpt"
+        pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/version_17/checkpoints/epoch=18-step=151.ckpt"
+        pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/version_16_FULL_CLASS/checkpoints/epoch=63-step=511.ckpt"
+        pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0.ckpt/lightning_logs/version_22/checkpoints/epoch=977-step=6845.ckpt"
+        pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_1.ckpt/lightning_logs/version_14/checkpoints/epoch=823-step=5767.ckpt"
+        pretrained_filename = "/home/uz1/saved_models_3dAE/3DAE_0_.ckpt/lightning_logs/version_1/checkpoints/epoch=106-step=8452.ckpt"
+        if args.pretrained:
+            pretrained_filename = args.pretrained
+    except:
+        pretrained_filename = False
+        resume=False
+    if os.path.isfile(pretrained_filename) and resume ==True: 
+        print("Found pretrained model, loading...")
+        # model = unet_3D.load_from_checkpoint(pretrained_filename)
+        model =  deeplab.load_from_checkpoint(pretrained_filename)
+        # model = deeplab(num_classes=9,proj_output_dim=1024,pred_hidden_dim=512,num_ch=9)
+    # else:
+        # model = unet_3D(n_classes=1,in_channels=1,proj_output_dim=1024,pred_hidden_dim=512)
+        
+
+    print("Running model from file:  ",pretrained_filename)
+    trainer.fit(model, train_loader)
+    trainer.test(model,train_loader)
 
 

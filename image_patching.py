@@ -22,6 +22,7 @@ parser = argparse.ArgumentParser(description='Image patching for Geology data')
 parser.add_argument('--img', help="Img to slice")
 parser.add_argument('--save_dir', help="Img to slice")
 parser.add_argument('--save_pkl', help="save as pickle files",action="store_true")
+parser.add_argument('--stride', help="save as pickle files",type=int)
 args= parser.parse_args()
 
 SAVE_AS_PICKLE = True if args.save_pkl ==True else False
@@ -40,7 +41,7 @@ print(image.shape)
 
 
 img = image.shape
-stride = (10,10)
+stride = (args.stride,args.stride)
 output_size=(64,64)
 fn = IMG_TO_SLICE.split('/')[-1][:-4]
 #where to save ?

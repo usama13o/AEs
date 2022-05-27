@@ -19,7 +19,7 @@ from torchvision import transforms
 import numpy as np 
 from torch.utils.tensorboard._embedding import make_sprite
 from PIL import ImageDraw, ImageFont
-
+import ttach as tta
 # Cell
 class Hook():
     "Create a hook on `m` with `hook_func`."
@@ -330,7 +330,8 @@ class GenerateCallback(pl.Callback):
                 trainer.logger.experiment.log({"Reconstructions": grid})
 class GenerateTestCallback(pl.Callback):
     
-    def __init__(self, input_imgs, every_n_epochs=1):
+    def __init__(self, input_imgs, every_n_epochs=1,logs=None):
+        self.logs=logs if logs !=None else ''
         super().__init__()
         self.input_imgs = torch.stack([x[0] for x in input_imgs],dim=0)# Images to reconstruct during training
         self.targets = [x[1] for x in input_imgs]
@@ -350,17 +351,23 @@ class GenerateTestCallback(pl.Callback):
         return figure
         
     def on_epoch_end(self, trainer, pl_module):
+        '''
+        Here we ...
+        '''
         if trainer.current_epoch % self.every_n_epochs == 0:
             # Reconstruct images
             input_imgs = self.input_imgs.to(pl_module.device)
             with torch.no_grad():
                 pl_module.eval()
                 reconst_imgs,embeds,pred = pl_module(input_imgs)
+                # pred = tta.ClassificationTTAWrapper(pl_module,tta.aliases.d4_transform())(input_imgs,self.targets)
+                
                 pl_module.train()
+
             #log prediction for classification 
             pred_logs=pred.cpu().numpy()
             pred = pred.softmax(1).argmax(1)
-            fig = create_stitched_image(np.array(self.target_imgs),pred,'./stitched_model')
+            fig = create_stitched_image(np.array(self.target_imgs),pred.int(),f'./stitched_model/{self.logs}')
             
             # trainer.logger.experiment.add_figure('Predictions',fig,global_step=trainer.global_step)
             
@@ -436,6 +443,11 @@ class K_means_callback(pl.Callback):
 
 
 def create_stitched_image(images,labels,logs='./'):
+    '''
+    image: list of images
+    labels: list of labels per image
+    logs: path to save the stitched image
+    '''
     print("images have the shape : ", images.shape)
     colors = [
 
