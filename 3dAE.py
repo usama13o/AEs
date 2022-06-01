@@ -97,11 +97,12 @@ from torchvision.datasets import ImageFolder
 #     root_dir=DATASET_PATH, split='train', transform=transform)
 # valid_dataset =glas_dataset(
     # root_dir=DATASET_PATH, split='valid', transform=transform)
-for p in [19]: #list(range(19)):
+for p in [19]:# list(range(19)):
+    
     # p=15,7
     print(f"Pickling {p} . . .")
     train_dataset = GeoFolders_2(
-        root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/',split='none',pick=p,k_labels_path=f'./k_labels_{p}.pickle')
+        root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/',split="none",pick=p,k_labels_path=f'./k_labels_{p}.pickle')
     valid_dataset = GeoFolders_2(
         root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/',split="valid",pick="China_Area_2")
 
@@ -181,7 +182,7 @@ for p in [19]: #list(range(19)):
         # wandb_logger = WandbLogger(name=f'{latent_dim}_',project='AutoEPI')
         trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_{fold}__{p}.ckpt"),
                                 gpus=[0] if str(device).startswith("cuda") else 0,
-                                max_epochs=500,
+                                max_epochs=25,
                                 callbacks=[ModelCheckpoint(save_top_k=1,monitor='class_loss_val',save_weights_only=True,save_last=True),
                                         GenerateCallback(
                                             get_train_images(12), every_n_epochs=1),

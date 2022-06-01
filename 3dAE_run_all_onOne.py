@@ -105,6 +105,7 @@ from torchvision.datasets import ImageFolder
 # valid_dataset =glas_dataset(
     # root_dir=DATASET_PATH, split='valid', transform=transform)
 
+#add logger 
 
 ress = []
 '''
@@ -120,94 +121,96 @@ which_fold=0 if args.which_fold == -1 else args.which_fold
 print("**** running on fold ", which_fold)
 for which_fold in [0,1]:
     now=datetime.datetime.now().strftime('%m-%d-%H:%M')
-    for p in [19]:#list(range(17))+[19,21]:
+    for p in list(range(18))+[19]:
         print(f"Picking {p} . . .")
-        m_path = sorted(list(list(Path('/home/uz1/saved_models_3dAE_NEW_DATA/').glob(f'./*{which_fold}__{p}.*'))[0].glob('./*/*/*/*')))
+        m_path = sorted(list(list(Path('/home/uz1/saved_models_3dAE_NEW_DATA/').glob(f'./*{which_fold}__{p}.*'))[-1].glob('./*/*/*/*')))
         if p in [21,19]: p=1
-        for model_path in m_path:
-            model_path=str(model_path)
-            train_dataset = GeoFolders_2(
-                root=DATASET_PATH,  transform=transform,raw_dir=raw_dir,split='valid',pick=p)# picks all but (p)
-            valid_dataset = GeoFolders_2(
-                root=DATASET_PATH,  transform=transform,raw_dir=raw_dir,split="valid",pick=args.target if args.target != "" else p)# valid isolates (p) region
+        # for model_path in m_path:
+            # model_path=str(model_path)
+        train_dataset = GeoFolders_2(
+            root=DATASET_PATH,  transform=transform,raw_dir=raw_dir,split='valid',pick=p)# picks all but (p)
+        valid_dataset = GeoFolders_2(
+            root=DATASET_PATH,  transform=transform,raw_dir=raw_dir,split="valid",pick=args.target if args.target != "" else p)# valid isolates (p) region
 
-            print(f"Training on {len(train_dataset.list_regions)}: {train_dataset.list_regions}")
-            print(f"\n  Validation on {len(valid_dataset.list_regions)}: {valid_dataset.list_regions}")
-            print('Path to model: ',model_path)
+        print(f"Training on {len(train_dataset.list_regions)}: {train_dataset.list_regions}")
+        print(f"\n  Validation on {len(valid_dataset.list_regions)}: {valid_dataset.list_regions}")
+        print('Path to model: ',model_path)
 
-            #find labels of the dataset
+        #find labels of the dataset
 
-            # train_dataset = GeoFolders(
-                # root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/',balance=args.balance,k_labels_path="/home/uz1/k_labels_.pickle")
-            # train_dataset[100]
-            # valid_dataset= GeoFolders(
-                # root='/home/uz1/data/geo/slices/geo1_slices_pil/geo1/64',  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/0')
-            #
-            from sklearn.model_selection import StratifiedShuffleSplit
+        # train_dataset = GeoFolders(
+            # root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/',balance=args.balance,k_labels_path="/home/uz1/k_labels_.pickle")
+        # train_dataset[100]
+        # valid_dataset= GeoFolders(
+            # root='/home/uz1/data/geo/slices/geo1_slices_pil/geo1/64',  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/0')
+        #
+        from sklearn.model_selection import StratifiedShuffleSplit
 
+            
+        splits = StratifiedShuffleSplit(2)
+
+        get_labels = lambda a,i: [int(x[1]) for x in np.array(a.samples)[i]]
                 
-            splits = StratifiedShuffleSplit(2)
-
-            get_labels = lambda a,i: [int(x[1]) for x in np.array(a.samples)[i]]
-                    
-                #  We define a set of data loaders that we can use for various purposes later.
-            train_loader = data.DataLoader(train_dataset, batch_size=128,
-                                        shuffle=True, drop_last=True, pin_memory=False, num_workers=8)
-            val_loader = data.DataLoader(
-                valid_dataset, batch_size=128, shuffle=True, drop_last=False, num_workers=8,sampler = None )
+            #  We define a set of data loaders that we can use for various purposes later.
+        train_loader = data.DataLoader(train_dataset, batch_size=128,
+                                    shuffle=True, drop_last=True, pin_memory=False, num_workers=8)
+        val_loader = data.DataLoader(
+            valid_dataset, batch_size=128, shuffle=True, drop_last=False, num_workers=8,sampler = None )
 
 
 
 
-            def get_train_images(num):
-                b = [valid_dataset[x] for x in range(num)]
-                return b
+        def get_train_images(num):
+            b = [valid_dataset[x] for x in range(num)]
+            return b
 
-            # wandb_logger = WandbLogger(name=f'{latent_dim}_',project='AutoEPI')
-            trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_test__{p}.ckpt"),
-                                    gpus=[0] if str(device).startswith("cuda") else 0,
-                                    max_epochs=1,
-                                    limit_train_batches=0,
-                                    limit_val_batches=0,
-                                    callbacks=[ModelCheckpoint(save_top_k=2,monitor='class_loss_val',save_weights_only=True),
-                                                GenerateTestCallback(
-                                                get_train_images(len(valid_dataset)), every_n_epochs=1,logs=model_path+'_'+str('') if model_path != '' else  None),
-                                            LearningRateMonitor("epoch"),
-                                            EarlyStopping(monitor="class_loss_val",patience=50,verbose=True),
-                                            # HookBasedFeatureExractorCallback()
-                                            ],
-                                    log_every_n_steps=1        
-                                            )
-            # If True, we plot the computation graph in tensorboard
-            trainer.logger._log_graph = True
-            # Optional logging argument that we don't need
-            trainer.logger._default_hp_metric = None
-
-
+        # wandb_logger = WandbLogger(name=f'{latent_dim}_',project='AutoEPI')
+        trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_test__{p}.ckpt"),
+                                gpus=[0] if str(device).startswith("cuda") else 0,
+                                max_epochs=1,
+                                limit_train_batches=0,
+                                limit_val_batches=0,
+                                callbacks=[ModelCheckpoint(save_top_k=2,monitor='class_loss_val',save_weights_only=True),
+                                            GenerateTestCallback(
+                                            get_train_images(len(valid_dataset)), every_n_epochs=1,logs=model_path+'_'+str('') if model_path != '' else  None),
+                                        LearningRateMonitor("epoch"),
+                                        EarlyStopping(monitor="class_loss_val",patience=50,verbose=True),
+                                        # HookBasedFeatureExractorCallback()
+                                        ],
+                                log_every_n_steps=1        
+                                        )
+        # If True, we plot the computation graph in tensorboard
+        trainer.logger._log_graph = True
+        # Optional logging argument that we don't need
+        trainer.logger._default_hp_metric = None
 
 
-            model = deeplab(num_classes=9,proj_output_dim=1024,pred_hidden_dim=512,num_ch=9,num_predicted_clases=2)
-            model =deeplab.load_from_checkpoint(model_path)
-            trainer.fit(model, train_loader)
-            # res = trainer.test(model, train_loader)
-            res = trainer.test(model,val_loader)
-            res[0]['pick'] = valid_dataset.list_regions
-            res[0]['pick_region_model'] = train_dataset.list_regions[0]
-            res[0]['model'] = Path(model_path)
-            res[0]['P'] = p
-            ress.append(res)
 
-            #save each run as row in a dataframe
-            '''
-            Make a dataframe with the results
-            For each entry in ress, we need to add its content to the dataframe
-            '''
-            all_Res = pd.DataFrame({})
-            for res in ress:
-                res_df = pd.DataFrame(res)
-                all_Res = all_Res.append(res_df)
-            # save at checkpoint path and add timestamp
 
-            all_Res.to_csv(f"{CHECKPOINT_PATH}/3DAE_test_results_{args.target}_f{which_fold}_{now}.csv") #add date_to path
+        model = deeplab(num_classes=9,proj_output_dim=1024,pred_hidden_dim=512,num_ch=9,num_predicted_clases=2)
+        model =deeplab.load_from_checkpoint(model_path)
+        trainer.fit(model, train_loader)
+        # res = trainer.test(model, train_loader)
+        res = trainer.test(model,val_loader)
+        res[0]['pick'] = valid_dataset.list_regions
+        res[0]['pick_region_model'] = train_dataset.list_regions[0]
+        # split model_path by '/'
+        model_path = model_path.split('/')[4:]
+        res[0]['model'] = model_path[0] +  model_path[1] + model_path[-1]
+        res[0]['P'] = p
+        ress.append(res)
+
+        #save each run as row in a dataframe
+        '''
+        Make a dataframe with the results
+        For each entry in ress, we need to add its content to the dataframe
+        '''
+        all_Res = pd.DataFrame({})
+        for res in ress:
+            res_df = pd.DataFrame(res)
+            all_Res = all_Res.append(res_df)
+        # save at checkpoint path and add timestamp
+
+        all_Res.to_csv(f"{CHECKPOINT_PATH}/3DAE_test_results_{args.target}_f{which_fold}_{now}.csv") #add date_to path
 
 

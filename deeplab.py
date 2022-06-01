@@ -177,12 +177,19 @@ class deeplab(pl.LightningModule):
                                                          mode='min',
                                                          factor=0.2,
                                                          patience=20,
-                                                         min_lr=5e-5)
+                                                         min_lr=5e-6)
         return {
             "optimizer": optimizer,
             "lr_scheduler": scheduler,
             "monitor": "class_loss_val"
         }
+
+        # scheduler = optim.lr_scheduler.OneCycleLR(optimizer ,steps_per_epoch=257,max_lr=1e-3,epochs=500,cycle_momentum=True )
+        # sched = {
+        #     'scheduler': scheduler,
+        #     'interval': 'step',
+        # }
+        # return [optimizer], [sched]
 
     def training_step(self, batch, batch_idx):
         loss, f1, precision, recall,_ = self._get_reconstruction_loss(batch)
