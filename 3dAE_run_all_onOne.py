@@ -43,23 +43,32 @@ from deeplab import deeplab
 
 from unet_3D import unet_3D
 from torchsampler import ImbalancedDatasetSampler
-
-
+import logging
+from loggingg import StreamToLogger
+import sys
 from argumentparser import args
 
 import datetime
 
 from utils import open_image_np, open_target_get_class 
-from datasets import glas_dataset,GeoFolders,GeoFolders_2
+from datasets import GeoFolders_2_VALID, glas_dataset,GeoFolders,GeoFolders_2
 def open_pickled_file(fn):
   with open(fn, "rb") as f_in:
     arr_new = pickle.load(f_in)
   return arr_new
 
 
+#logger
+# logging.basicConfig(
+#     level=logging.DEBUG,
+#     format='%(asctime)s:%(levelname)s:%(name)s:%(message)s',
+#     filename="./out.log",
+#     filemode='a'
+# )
 
-
-
+# stdout_logger = logging.getLogger('STDOUT')
+# sl = StreamToLogger(stdout_logger, logging.INFO)
+# sys.stdout = sl
 
 # Transformations applied on each image => only make them a tensor
 transform = transforms.Compose([
@@ -73,6 +82,12 @@ transform = transforms.Compose([
     # transforms.RandomApply(torch.nn.ModuleList([
         # transforms.GaussianBlur((3, 3)),
     # ]), p=0.3),
+])
+transform_valid = transforms.Compose([
+    # Resize((128, 128)),
+    transforms.ToTensor(),
+    ts.TypeCast(['float', 'float']),
+    ts.StdNormalize(),
 ])
 # Loading the training dataset. We need to split it into a training and validation part
 pl.seed_everything(42)
@@ -105,7 +120,8 @@ from torchvision.datasets import ImageFolder
 # valid_dataset =glas_dataset(
     # root_dir=DATASET_PATH, split='valid', transform=transform)
 
-#add logger 
+#add logger to log stdout and stderr to txt
+
 
 ress = []
 '''
@@ -121,22 +137,22 @@ which_fold=0 if args.which_fold == -1 else args.which_fold
 print("**** running on fold ", which_fold)
 for which_fold in [0,1]:
     now=datetime.datetime.now().strftime('%m-%d-%H:%M')
-    for p in list(range(18))+[19]:
+    for p in range(0,18):
         print(f"Picking {p} . . .")
-        m_path = sorted(list(list(Path('/home/uz1/saved_models_3dAE_NEW_DATA/').glob(f'./*{which_fold}__{p}.*'))[-1].glob('./*/*/*/*')))
+        model_path = str(sorted(list(list(Path('/home/uz1/saved_models_3dAE_NEW_DATA/').glob(f'./*{which_fold}__{p}.*'))[-1].glob('./*/*/*/*')))[-1])
+        # m_path = sorted(list(list(Path('/home/uz1/saved_models_3dAE_NEW_DATA/').glob(f'./*{which_fold}__{p}.*'))[-1].glob('./*/*/*/*')))
         if p in [21,19]: p=1
         # for model_path in m_path:
             # model_path=str(model_path)
         train_dataset = GeoFolders_2(
             root=DATASET_PATH,  transform=transform,raw_dir=raw_dir,split='valid',pick=p)# picks all but (p)
-        valid_dataset = GeoFolders_2(
-            root=DATASET_PATH,  transform=transform,raw_dir=raw_dir,split="valid",pick=args.target if args.target != "" else p)# valid isolates (p) region
+        valid_dataset = GeoFolders_2_VALID(
+            root=DATASET_PATH,  transform=transform_valid,raw_dir=raw_dir,split="valid",pick=args.target if args.target != "" else p)# valid isolates (p) region
 
         print(f"Training on {len(train_dataset.list_regions)}: {train_dataset.list_regions}")
         print(f"\n  Validation on {len(valid_dataset.list_regions)}: {valid_dataset.list_regions}")
         print('Path to model: ',model_path)
 
-        #find labels of the dataset
 
         # train_dataset = GeoFolders(
             # root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/',balance=args.balance,k_labels_path="/home/uz1/k_labels_.pickle")
@@ -155,7 +171,7 @@ for which_fold in [0,1]:
         train_loader = data.DataLoader(train_dataset, batch_size=128,
                                     shuffle=True, drop_last=True, pin_memory=False, num_workers=8)
         val_loader = data.DataLoader(
-            valid_dataset, batch_size=128, shuffle=True, drop_last=False, num_workers=8,sampler = None )
+            valid_dataset, batch_size=128, shuffle=False, drop_last=False, num_workers=8,sampler = None )
 
 
 
@@ -163,7 +179,10 @@ for which_fold in [0,1]:
         def get_train_images(num):
             b = [valid_dataset[x] for x in range(num)]
             return b
-
+        # extract region name for logging path of sprite image 
+        model_region = list(Path(DATASET_PATH).glob("*_Area_*")) 
+        model_region = [ x for x in model_region if "USA_Area_3" not in str(x) and "Egypt" not in str(x) and "China" not in str(x)]
+        model_region = model_region[int(Path(model_path).parts[4].split("_")[-1][:-5])].parts[-1]
         # wandb_logger = WandbLogger(name=f'{latent_dim}_',project='AutoEPI')
         trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_test__{p}.ckpt"),
                                 gpus=[0] if str(device).startswith("cuda") else 0,
@@ -172,7 +191,7 @@ for which_fold in [0,1]:
                                 limit_val_batches=0,
                                 callbacks=[ModelCheckpoint(save_top_k=2,monitor='class_loss_val',save_weights_only=True),
                                             GenerateTestCallback(
-                                            get_train_images(len(valid_dataset)), every_n_epochs=1,logs=model_path+'_'+str('') if model_path != '' else  None),
+                                            get_train_images(len(valid_dataset)), every_n_epochs=1,logs="Per_Region_Results/"+model_region if model_path != '' else  None),
                                         LearningRateMonitor("epoch"),
                                         EarlyStopping(monitor="class_loss_val",patience=50,verbose=True),
                                         # HookBasedFeatureExractorCallback()
@@ -185,18 +204,19 @@ for which_fold in [0,1]:
         trainer.logger._default_hp_metric = None
 
 
-
-
         model = deeplab(num_classes=9,proj_output_dim=1024,pred_hidden_dim=512,num_ch=9,num_predicted_clases=2)
         model =deeplab.load_from_checkpoint(model_path)
         trainer.fit(model, train_loader)
         # res = trainer.test(model, train_loader)
         res = trainer.test(model,val_loader)
+        print(res)
         res[0]['pick'] = valid_dataset.list_regions
         res[0]['pick_region_model'] = train_dataset.list_regions[0]
         # split model_path by '/'
         model_path = model_path.split('/')[4:]
-        res[0]['model'] = model_path[0] +  model_path[1] + model_path[-1]
+        res[0]['fold_region'] = model_path[0] 
+        res[0]['version'] = model_path[2] 
+        res[0]['epoch'] = model_path[-1]
         res[0]['P'] = p
         ress.append(res)
 

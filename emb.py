@@ -29,6 +29,7 @@ import math
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
+from torchvision import transforms
 
 # tf.io.gfile = tb.compat.tensorflow_stub.io.gfile
 
@@ -54,7 +55,8 @@ except ModuleNotFoundError:  # Google Colab does not have PyTorch Lightning inst
 # Path to the folder where the datasets are/should be downloaded (e.g. CIFAR10)
 # DATASET_PATH = "/mnt/data/Other/DOWNLOADS/WSIData/filtered/PNG/train/"
 # DATASET_PATH = "F:\\Data\\slices (3)\\slices\\0"
-DATASET_PATH = r"/home/uz1/data/tupa/patches"
+# DATASET_PATH = r"/home/uz1/data/tupa/patches"
+DATASET_PATH = "/home/uz1/DATA!/medmnist"
 # Path to the folder where the pretrained models are saved
 CHECKPOINT_PATH = "./saved_models/"
 IMG_SIZE =224
@@ -122,7 +124,8 @@ print("Device:", device)
 transform = transforms.Compose([
     # Resize((IMG_SIZE, IMG_SIZE)),
     transforms.ToTensor(),
-    transforms.RandomResizedCrop((IMG_SIZE, IMG_SIZE)),
+    # transforms.RandomResizedCrop((IMG_SIZE, IMG_SIZE)),
+    transforms.Resize((224,224)) ,
     ts.ChannelsFirst(),
     ts.TypeCast(['float', 'float']),
     ts.ChannelsLast(),
@@ -137,7 +140,9 @@ pl.seed_everything(42)
 #     root_dir=DATASET_PATH, split='all', transform=transform)
 # valid_dataset = glas_dataset(
 #     root_dir=DATASET_PATH, split='valid', transform=transform)
-train_dataset = svs_h5_dataset(DATASET_PATH,transform=transform)
+# train_dataset = svs_h5_dataset(DATASET_PATH,transform=transform)
+from datasets import combined_medinst_dataset
+train_dataset = combined_medinst_dataset(root=DATASET_PATH,transform=transform)
 # We define a set of data loaders that we can use for various purposes later.
 train_loader = data.DataLoader(train_dataset, batch_size=16,
                                shuffle=False, drop_last=True, pin_memory=False, num_workers=4)
@@ -148,9 +153,10 @@ def get_train_images(num):
 
 
 # Check whether pretrained model exists. If yes, load it and skip training
-pretrained_filename = r"/mnt/data/Other/DOWNLOADS/epoch=499-step=48499.ckpt"
-pretrained_filename = r"/mnt/data/Other/DOWNLOADS/epoch=999-step=27999 (1).ckpt"
-pretrained_filename = r"/home/uz1/saved_models_AE/AE_SVS_512.ckpt/lightning_logs/version_0/checkpoints/epoch=14-step=12569.ckpt"
+# pretrained_filename = r"/mnt/data/Other/DOWNLOADS/epoch=499-step=48499.ckpt"
+# pretrained_filename = r"/mnt/data/Other/DOWNLOADS/epoch=999-step=27999 (1).ckpt"
+# pretrained_filename = r"/home/uz1/saved_models_AE/AE_SVS_512.ckpt/lightning_logs/version_0/checkpoints/epoch=14-step=12569.ckpt"
+pretrained_filename = r"/home/uz1/saved_models_AE/AE_SVS_512.ckpt/lightning_logs/version_5/checkpoints/epoch=39-step=80959.ckpt"
 model = Autoencoder(base_channel_size=64, latent_dim=512,
                     width=IMG_SIZE, height=IMG_SIZE)
 model = Autoencoder.load_from_checkpoint(pretrained_filename)
@@ -268,10 +274,10 @@ if __name__ == "__main__":
         plt.savefig('./The Elbow Method using Inertia.png')
 
 
-        kmeans = KMeans(n_clusters=3, random_state=0).fit(train_img_embeds[1])
-        print(len(kmeans.labels_))
+        kmeans = KMeans(n_clusters=8, random_state=0).fit(train_img_embeds[1])
+        print("Kmeans labbeled :",len(kmeans.labels_))
         targs = embed_imgs_labels(model,train_loader,kmeans)
-        np.save("saved_labels_svs",targs)
+        np.save("saved_labels_medmnist",targs)
         print("Size of labels is: ", targs.shape)
         import joblib 
         joblib.dump(kmeans,"kmeans_class.pkl")

@@ -75,7 +75,11 @@ class deeplab(pl.LightningModule):
 
     def forward(self, x):
         x, conv2 = self.resnet_features(x)
-        class_feat = self.projector(torch.flatten(x, 1))
+        # intorploate x by 2 
+        if x.shape[2] != 4:
+             class_feat = self.projector(torch.flatten(F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=True),1))
+        else:
+            class_feat = self.projector(torch.flatten(x, 1))
         class_logits = self.predictor(class_feat)
 
         x1 = self.aspp1(x)
@@ -84,7 +88,6 @@ class deeplab(pl.LightningModule):
         x4 = self.aspp4(x)
         x5 = self.image_pool(x)
         x5 = F.interpolate(x5, size=x4.size()[2:], mode='nearest')
-
         x = torch.cat((x1, x2, x3, x4, x5), dim=1)
         x = self.fc1(x)
         x = F.interpolate(x, scale_factor=(4, 4), mode='bilinear')
@@ -120,7 +123,7 @@ class deeplab(pl.LightningModule):
         noc=[len(y[y==1]),recall[1] * len(y[y==1])] if 1 in y else [0,0] # number of correctly classified for ROI 
         if color.shape[0] > 5:
             color = color.permute(0, 3, 1, 2)
-            loss = F.mse_loss(x, x_hat, reduction="none")
+            loss = F.mse_loss(x, x_hat[:,:,:x.shape[2],:x.shape[2]], reduction="none")
         else:
             loss = F.mse_loss(color, x_hat, reduction="none")
         loss = loss.sum(dim=[1, 2, 3]).mean(dim=[0])
@@ -222,22 +225,28 @@ class deeplab(pl.LightningModule):
         })
 
     def test_step(self, batch, batch_idx):
-        loss, f1, precision, recall,noc = self._get_reconstruction_loss(batch)
-        x,y,_= batch
+        # loss, f1, precision, recall,noc = self._get_reconstruction_loss(batch)
+        x,_= batch
+        x_hat, class_feat, class_logits = self.forward(x)
+        pred = self.apply_argmax_softmax(class_logits).argmax(1)
+        self.log_dict({
+            'prediction':pred,})
+
         # model =  tta.ClassificationTTAWrapper(self,tta.aliases.d4_transform())
         # res = model(x,y.cpu())
         # res = res[0] if isinstance(res,ndarray) else res
         # res=(res > 1).int()
-        self.log_dict({
-            'f1_0_test': f1[0],
-            'f1_1_test': f1[1] if len(f1) > 1 else 0,
-            "precision_0_test": precision[0],
-            "precision_1_test": precision[1] if len(precision) > 1 else 0,
-            "recall_0_test":recall[0],
-            "recall_1_test":recall[1] if len(recall) > 1 else 0,
-            'test_recon_loss': loss[0],
-            'class_loss_test': loss[1],
-            'Number of Correctly Classified':noc[1],
-            "Number of ROI regions":noc[0]
-            # "mean_f1_0_tta": res,
-        })
+
+        # self.log_dict({
+        #     'f1_0_test': f1[0],
+        #     'f1_1_test': f1[1] if len(f1) > 1 else 0,
+        #     "precision_0_test": precision[0],
+        #     "precision_1_test": precision[1] if len(precision) > 1 else 0,
+        #     "recall_0_test":recall[0],
+        #     "recall_1_test":recall[1] if len(recall) > 1 else 0,
+        #     'test_recon_loss': loss[0],
+        #     'class_loss_test': loss[1],
+        #     'Number of Correctly Classified':noc[1],
+        #     "Number of ROI regions":noc[0]
+        #     # "mean_f1_0_tta": res,
+        # })

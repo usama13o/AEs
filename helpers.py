@@ -330,7 +330,8 @@ class GenerateCallback(pl.Callback):
                 trainer.logger.experiment.log({"Reconstructions": grid})
 class GenerateTestCallback(pl.Callback):
     
-    def __init__(self, input_imgs, every_n_epochs=1,logs=None):
+    def __init__(self, input_imgs, every_n_epochs=1,logs=None,log_to_tb=False):
+        self.log_to_tb = log_to_tb
         self.logs=logs if logs !=None else ''
         super().__init__()
         self.input_imgs = torch.stack([x[0] for x in input_imgs],dim=0)# Images to reconstruct during training
@@ -372,15 +373,17 @@ class GenerateTestCallback(pl.Callback):
             # trainer.logger.experiment.add_figure('Predictions',fig,global_step=trainer.global_step)
             
             # Plot and add to tensorboard
-            imgs = torch.stack([*input_imgs[1].squeeze(),*reconst_imgs[1].squeeze()],dim=0).unsqueeze(1)
-            trainer.logger.experiment.add_embedding(embeds,  # Encodings per image
-                     label_img=fig[:,:3,:,:], global_step=trainer.global_step)
-            # imgs = torch.stack([input_imgs, reconst_imgs], dim=1).flatten(0,1)
-            grid = torchvision.utils.make_grid(imgs, nrow=2, normalize=True, range=(-1,1))
-            try:
-                trainer.logger.experiment.add_image("Reconstructions", grid, global_step=trainer.global_step)
-            except:
-                trainer.logger.experiment.log({"Reconstructions": grid})
+            if self.log_to_tb:
+                
+                imgs = torch.stack([*input_imgs[1].squeeze(),*reconst_imgs[1].squeeze()],dim=0).unsqueeze(1)
+                trainer.logger.experiment.add_embedding(embeds,  # Encodings per image
+                        label_img=fig[:,:3,:,:], global_step=trainer.global_step)
+                # imgs = torch.stack([input_imgs, reconst_imgs], dim=1).flatten(0,1)
+                grid = torchvision.utils.make_grid(imgs, nrow=2, normalize=True, range=(-1,1))
+                try:
+                    trainer.logger.experiment.add_image("Reconstructions", grid, global_step=trainer.global_step)
+                except:
+                    trainer.logger.experiment.log({"Reconstructions": grid})
 
 
 class K_means_callback(pl.Callback):
@@ -490,5 +493,6 @@ def create_stitched_image(images,labels,logs='./'):
         os.makedirs(logs)
     except:
         print("save dir already exists ")
-    make_sprite(mod_images[:,:3,:,:], save_path=logs)
-    return mod_images[:,:,:,:]
+    if logs is not None:
+        make_sprite(mod_images[:,:3,:,:], save_path=logs)
+    return mod_images[:,:3,:,:]

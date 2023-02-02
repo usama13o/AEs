@@ -48,11 +48,12 @@ try:
 except ModuleNotFoundError:  # Google Colab does not have PyTorch Lightning installed by default. Hence, we do it here if necessary
     import pytorch_lightning as pl
 
-# Tensorboard extension (for visualization purposes later)
 
+from datasets import combined_medinst_dataset
 # Path to the folder where the datasets are/should be downloaded (e.g. CIFAR10)
 # DATASET_PATH = "F:\\Data\\test\\train\\cls2\\"
 DATASET_PATH = "/home/uz1/data/tupa/patches"
+DATASET_PATH = "/home/uz1/DATA!/medmnist"
 # Path to the folder where the pretrained models are saved
 CHECKPOINT_PATH = "./saved_models_AE/"
 n_epochs=40
@@ -72,7 +73,7 @@ print("Device:", device)
 # Get data
 # Transformations applied on each image => only make them a tensor
 transform = transforms.Compose([
-    Resize((224, 224)),
+    transforms.Resize((224,224)) ,
     transforms.ToTensor(),
     transforms.RandomHorizontalFlip(),
     transforms.RandomVerticalFlip(),
@@ -91,11 +92,12 @@ transform = transforms.Compose([
 pl.seed_everything(42)
 
 # Loading the test set
-train_dataset = svs_h5_dataset(
-    root_dir=DATASET_PATH, split='train', transform=transform)
-valid_dataset =svs_h5_dataset(
-    root_dir=DATASET_PATH, split='valid', transform=transform)
-
+#train_dataset = svs_h5_dataset(
+#    root_dir=DATASET_PATH, split='train', transform=transform)
+#valid_dataset =svs_h5_dataset(
+#    root_dir=DATASET_PATH, split='valid', transform=transform)
+train_dataset = combined_medinst_dataset(root=DATASET_PATH,transform=transform)
+valid_dataset= combined_medinst_dataset(root=DATASET_PATH,split='val',transform=transform)
 # We define a set of data loaders that we can use for various purposes later.
 train_loader = data.DataLoader(train_dataset, batch_size=bs,
                                shuffle=True, drop_last=True, pin_memory=False, num_workers=8)
@@ -104,6 +106,7 @@ val_loader = data.DataLoader(
 
 
 def get_train_images(num):
+    print(train_dataset[1][0].shape)
     return torch.stack([train_dataset[i][0] for i in range(num)], dim=0)
 
 

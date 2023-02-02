@@ -32,7 +32,7 @@ class GeoFolders_2(data.Dataset):
 
 
     
-    def __init__(self,root,transform,raw_dir,split="all",k_labels_path=None,pick=None):
+    def __init__(self,root,raw_dir,transform=None,split="all",k_labels_path=None,pick=None):
         self.list_targs=None 
 
         self.transform = transform
@@ -76,7 +76,10 @@ class GeoFolders_2(data.Dataset):
         print("preprocessing paths ...")
         self.raw_paths = [sorted(list((raw_path[0]  /  "0").glob("*.pickle"))) for raw_path in self.samples]
         self.slice_paths = [sorted(list((slice_path[1]  /  "0").glob("*.png"))) for slice_path in self.samples]
+        self.slice_paths = [sorted(y,key=lambda x: int(str(x).split("/")[-1].split(".")[0])) for y in self.slice_paths] # internal sortings of patches according to their index
+        self.raw_paths= [sorted(y,key=lambda x: int(str(x).split("/")[-1].split(".")[0])) for y in self.raw_paths] # internal sortings of patches according to their index
         self.num_slices = len(self.raw_paths[0])
+        print(self.raw_paths[0][0])
         del self.samples
         print("Current smaple count ", len(self.raw_paths)* self.num_slices)
     def __len__(self):
@@ -103,7 +106,7 @@ class GeoFolders_2(data.Dataset):
 
         #return actula color tile fro testing 
         color_path = open_image_np(slice)
-        target= open_target_get_class_with_perc(target,0.12)
+        target= open_target_get_class_with_perc(target,0.05)
         input  = open_pickled_file(raw_path)
         # handle exceptions
         # check_exceptions(input, target)
@@ -120,6 +123,44 @@ class GeoFolders_2(data.Dataset):
         else:
             return self.list_regions
 
+class GeoFolders_2_VALID(GeoFolders_2):
+    
+    def __init__(self,root,raw_dir,transform=None,split="all",k_labels_path=None,pick=None):
+        super(GeoFolders_2_VALID,self).__init__(root,raw_dir,transform=transform,split=split,k_labels_path=k_labels_path,pick=pick)
+    
+    def __len__(self):
+        return self.num_slices 
+    def __getitem__(self, index: int):
+        # which bin/region
+        where = 0
+        # which patch in that region 
+        which = index
+        # maximum of each bin is 1936
+        assert which <= self.num_slices
+        # print(index,where,which)
+
+        #get string paths - takes long - we search in each dir on each index lookup - very slow  
+        # raw_path, slice,target = self.samples[where]
+        raw_path = self.raw_paths[where][which]
+        slice = self.slice_paths[where][which]
+        target= slice
+        target = str(target).replace("/64/","/64/anno/") if "test" not in str(target) else str(target).replace("/test/","/64/anno/test/")
+        
+
+
+
+        #return actula color tile fro testing 
+        color_path = open_image_np(slice)
+        target= open_target_get_class_with_perc(target,0.05)
+        input  = open_pickled_file(raw_path)
+        # handle exceptions
+        # check_exceptions(input, target)
+        if self.transform:
+            input = self.transform(input)
+            # color_path=self.transform(color_path)
+
+       
+        return input,target,color_path
 class glas_dataset(data.Dataset):
       
 
@@ -132,7 +173,7 @@ class glas_dataset(data.Dataset):
 
         sp= len(self.image_filenames)
         sp= int(train_pct *sp)
-        if split == 'train':
+        if split == split:
             self.image_filenames = self.image_filenames[:sp]
         
         elif split == 'all':
@@ -287,7 +328,7 @@ class svs_h5_dataset(data.Dataset):
         self.target_filenames = []
         sp= self.image_filenames.__len__()
         sp= int(train_pct *sp)
-        if split == 'train':
+        if split == split:
             self.image_filenames = self.image_filenames[:sp]
         elif split =='all':
             self.image_filenames = self.image_filenames
@@ -367,3 +408,144 @@ def open_image_np(path):
     im = open_image(path)
     array = np.array(im)
     return array
+
+
+# combine multiple datasets into one Class 
+from medmnist.dataset import PathMNIST, BreastMNIST,OCTMNIST,ChestMNIST,PneumoniaMNIST,DermaMNIST,RetinaMNIST,BloodMNIST,TissueMNIST,OrganAMNIST,OrganCMNIST,OrganSMNIST
+from medmnist.dataset import MedMNIST2D
+class combined_medinst_dataset(MedMNIST2D):
+    def __init__(self, root="",split="train",transform=None,no_dataset=11,limit=None):
+        # load the datasets
+        self.transform =transform
+        self.limit = limit
+        pathmnist = PathMNIST(split=split, root=root)
+        breastmnist = BreastMNIST(split=split,root=root)
+        octmnist = OCTMNIST(split=split, root=root)
+        chestmnist = ChestMNIST(split=split,root=root)
+        pneumoniamnist = PneumoniaMNIST(split=split, root=root)
+        dermamnist = DermaMNIST(split=split, root=root)
+        retinamnist = RetinaMNIST(split=split, root=root)
+        bloodmnist = BloodMNIST(split=split, root=root)
+        organA = OrganAMNIST(split=split, root=root)
+        organC = OrganCMNIST(split=split, root=root)
+        organS = OrganSMNIST(split=split, root=root)
+        tissueMnist = TissueMNIST(split=split, root=root,download=True)
+        datasets = [pathmnist,breastmnist,octmnist,chestmnist,pneumoniamnist,dermamnist,retinamnist,bloodmnist,organA,organC,organS,tissueMnist]
+        self.datasets = datasets
+        self.tot  = sum(len(d) for d in self.datasets)
+        if limit is not None:
+            self.d = []
+            ex=0
+            for d in self.datasets:
+                if int(limit / no_dataset) > len(d):# if the limit is greater than the dataset
+                    self.d.append(len(d))
+                    self.d[ex] +=(int(limit / no_dataset) - len(d))
+                else:
+                    self.d.append(int(limit / no_dataset))
+            print("Datasets split -- > ",self.d)
+        else:
+            self.d = [len(d) for d in self.datasets]
+        #create e dictionary mapping between the dataset index in datasets and the class index in the combined dataset
+        class_index = {}
+        for i,d in enumerate(datasets):
+            for j in range(len(d.info['label'])):
+                class_index[i,j] = sum(len(d.info['label']) for d in datasets[:i]) + j
+        self.class_index = class_index
+        print(self.class_index)
+
+    def __getitem__(self, i):
+        #based on i and total number of samples in all datasets, determine which dataset to get the sample from
+        for y,d in enumerate(self.datasets):
+            # print("looking in dataset",d," for sample",i)
+            if i < self.d[y]:
+                # print("Debug ----> ",i,self.d,d)
+                x,z = d[i]
+                if len(z) > 1:
+                    z =  np.array(0) if sum(z) == 0 else np.array(1)
+                # if image in index 1 has 1 channel, repeat it 3 times then reutrn it
+                if x.mode == 'L':
+                    return self.transform(x.convert("RGB")), self.class_index[(y,int(z))]
+                return self.transform(x), self.class_index[(y,int(z))]
+            i -= self.d[y]
+        raise IndexError('index out of range')
+
+    def __len__(self):
+        if self.limit is not None:
+            return self.limit
+        #sum of all the lengths of the datasets
+        return self.tot
+
+class ConcatDataset(data.Dataset):
+    """Dataset to concatenate multiple datasets.
+
+    Args:
+        datasets (sequence): List of datasets to be concatenated
+    """
+
+    def __init__(self, datasets):
+        self.datasets = datasets
+
+    def __getitem__(self, i):
+        for d in self.datasets:
+            
+            if i < len(d):
+                return d[i]
+            i -= len(d)
+        raise IndexError('index out of range')
+
+    def __len__(self):
+        return sum(len(d) for d in self.datasets)
+
+
+class ImageFolder2(ImageFolder):
+    "same as ImageFolder but with limit to the number of classes,assumes equally distributed number of iamges per class"
+    def __init__(
+            self,
+            root: str,
+            transform = None,
+            target_transform = None,
+            is_valid_file= None,
+            limit = None,
+    ):
+        super(ImageFolder2, self).__init__(root,
+                                          transform=transform,
+                                          target_transform=target_transform,
+                                          is_valid_file=is_valid_file)
+        # limit the classes in self.samples to the number of classes in self.limit
+        if limit is not None:
+            self.samples = [s for s in self.samples if s[1] < limit]
+            self.targets = [s[1] for s in self.samples]
+from monai.data import GridPatchDataset, DataLoader, PatchIter
+import tifffile
+from scipy.ndimage import rotate
+
+class GeoData_test_tiff(data.Dataset):
+    def crop_center(self,img,cropx,cropy):
+        y,x,c = img.shape
+        startx = x//2 - cropx//2
+        starty = y//2 - cropy//2    
+        return img[starty:starty+cropy, startx:startx+cropx, :]
+    def __init__(
+            self,
+            root: str,
+            transform = None,
+            target_transform = None,
+            patch_size= (64,64),
+            limit = None,
+    ):
+        super(GeoData_test_tiff,self).__init__()
+        self.patcher = PatchIter(patch_size,(0,0))
+        self.patch_size = patch_size 
+        self.transform = transform
+        self.image = tifffile.imread(root)
+        self.image =self.crop_center(rotate(self.image.transpose(1,2,0),10,),3890,4090) if limit =='rotate' else self.image.transpose(1,2,0)
+        print("Image shape",self.image.shape)
+        self.full = list(x for x in self.__iter__())
+
+    def __iter__(self):
+        return self.patcher(self.transform(self.image))
+
+    def __getitem__(self,i):
+        return self.full[i][0],self.full[i][1]
+    def __len__(self):
+        return len(list(x for x in self))
