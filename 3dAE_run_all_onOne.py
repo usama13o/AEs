@@ -104,8 +104,9 @@ resume=True
 kfold=False
 # DATASET_PATH ="/home/uz1/data/geo/slices/64"
 # raw_dir = '/home/uz1/data/geo/slices_raw/64/'
-raw_dir = '/home/uz1/data/geo/slices_raw/test/'
-DATASET_PATH ="/home/uz1/data/geo/slices/test/"
+
+raw_dir = '/home/uz1/data/geo/slices_raw/test/' # path for the raw slices
+DATASET_PATH ="/home/uz1/data/geo/slices/test/" # path for the RGB slices 
 
 
 # DATASET_PATH ="/home/uz1/data/geo/slices/geo2_slices_pil/geo2/64"
@@ -115,12 +116,7 @@ CHECKPOINT_PATH =  "./saved_models_3dAE_NEW_DATA_TESTING_RES/"
 # Setting the seed
 # Loading the test set
 from torchvision.datasets import ImageFolder
-# train_dataset = glas_dataset(
-#     root_dir=DATASET_PATH, split='train', transform=transform)
-# valid_dataset =glas_dataset(
-    # root_dir=DATASET_PATH, split='valid', transform=transform)
 
-#add logger to log stdout and stderr to txt
 
 
 ress = []
@@ -139,11 +135,13 @@ for which_fold in [0,1]:
     now=datetime.datetime.now().strftime('%m-%d-%H:%M')
     for p in range(0,18):
         print(f"Picking {p} . . .")
+        # This is the path to the model that we want to test
         model_path = str(sorted(list(list(Path('/home/uz1/saved_models_3dAE_NEW_DATA/').glob(f'./*{which_fold}__{p}.*'))[-1].glob('./*/*/*/*')))[-1])
         # m_path = sorted(list(list(Path('/home/uz1/saved_models_3dAE_NEW_DATA/').glob(f'./*{which_fold}__{p}.*'))[-1].glob('./*/*/*/*')))
-        if p in [21,19]: p=1
-        # for model_path in m_path:
-            # model_path=str(model_path)
+        if p in [21,19]: p=1 # ignore
+
+
+        
         train_dataset = GeoFolders_2(
             root=DATASET_PATH,  transform=transform,raw_dir=raw_dir,split='valid',pick=p)# picks all but (p)
         valid_dataset = GeoFolders_2_VALID(
@@ -153,13 +151,7 @@ for which_fold in [0,1]:
         print(f"\n  Validation on {len(valid_dataset.list_regions)}: {valid_dataset.list_regions}")
         print('Path to model: ',model_path)
 
-
-        # train_dataset = GeoFolders(
-            # root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/',balance=args.balance,k_labels_path="/home/uz1/k_labels_.pickle")
-        # train_dataset[100]
-        # valid_dataset= GeoFolders(
-            # root='/home/uz1/data/geo/slices/geo1_slices_pil/geo1/64',  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/0')
-        #
+        # Stratified sampling to ensure that the training and validation sets have the same class distribution
         from sklearn.model_selection import StratifiedShuffleSplit
 
             
@@ -175,7 +167,7 @@ for which_fold in [0,1]:
 
 
 
-
+        # Load some images from the training set to see the autoencoder reconstruction
         def get_train_images(num):
             b = [valid_dataset[x] for x in range(num)]
             return b
@@ -183,7 +175,8 @@ for which_fold in [0,1]:
         model_region = list(Path(DATASET_PATH).glob("*_Area_*")) 
         model_region = [ x for x in model_region if "USA_Area_3" not in str(x) and "Egypt" not in str(x) and "China" not in str(x)]
         model_region = model_region[int(Path(model_path).parts[4].split("_")[-1][:-5])].parts[-1]
-        # wandb_logger = WandbLogger(name=f'{latent_dim}_',project='AutoEPI')
+
+
         trainer = pl.Trainer(default_root_dir=os.path.join(CHECKPOINT_PATH, f"3DAE_test__{p}.ckpt"),
                                 gpus=[0] if str(device).startswith("cuda") else 0,
                                 max_epochs=1,
@@ -205,9 +198,11 @@ for which_fold in [0,1]:
 
 
         model = deeplab(num_classes=9,proj_output_dim=1024,pred_hidden_dim=512,num_ch=9,num_predicted_clases=2)
-        model =deeplab.load_from_checkpoint(model_path)
+        model = deeplab.load_from_checkpoint(model_path)
         trainer.fit(model, train_loader)
         # res = trainer.test(model, train_loader)
+
+        # save results
         res = trainer.test(model,val_loader)
         print(res)
         res[0]['pick'] = valid_dataset.list_regions

@@ -101,6 +101,9 @@ from torchvision.datasets import ImageFolder
 
 
 ress = []
+"""
+Run all models on their respective regions 
+"""
 for p in list(range(19))[:]:
     print(f"Picking {p} . . .")
     model_path = str(sorted(list(list(Path('/home/uz1/saved_models_3dAE_NEW_DATA/').glob(f'./*__{p}*'))[1].glob('./*/*/*/*')))[1])
@@ -113,14 +116,6 @@ for p in list(range(19))[:]:
     print(f"\n  Validation on {len(valid_dataset.list_regions)}: {valid_dataset.list_regions}")
     print('Path to model: ',model_path)
 
-    #find labels of the dataset
-
-    # train_dataset = GeoFolders(
-        # root=DATASET_PATH,  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/geo2_unclipped/0/',balance=args.balance,k_labels_path="/home/uz1/k_labels_.pickle")
-    # train_dataset[100]
-    # valid_dataset= GeoFolders(
-        # root='/home/uz1/data/geo/slices/geo1_slices_pil/geo1/64',  transform=transform,raw_dir='/home/uz1/data/geo/slices_raw/64/0')
-    #
     from sklearn.model_selection import StratifiedShuffleSplit
    
         

@@ -129,7 +129,7 @@ from torchvision.datasets import ImageFolder
 
 ress = []
 '''
-Run all models on Selected Region and save results in CSV file.
+Run all models on Selected Region and save results in CSV file. TESTING on RAW Tif files!
 Select model based on most updated epoch model 
 args:
     model_name: path of the model to run
